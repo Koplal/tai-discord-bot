@@ -43,4 +43,6 @@ process.on('unhandledRejection', (error) => {
 
 // Login to Discord
 console.log('Starting TAI Discord Bot...');
+console.log(`Token length: ${config.discordToken.length}`);
+console.log(`Token prefix: ${config.discordToken.substring(0, 10)}...`);
 client.login(config.discordToken);
