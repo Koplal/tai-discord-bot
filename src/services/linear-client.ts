@@ -6,6 +6,35 @@
 
 const LINEAR_API_URL = 'https://api.linear.app/graphql';
 
+// Simple cache with TTL for reducing API calls
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const cache: {
+  users: Map<string, CacheEntry<LinearUser[]>>;
+  labels: Map<string, CacheEntry<LinearLabel[]>>;
+  projects: Map<string, CacheEntry<LinearProject[]>>;
+} = {
+  users: new Map(),
+  labels: new Map(),
+  projects: new Map(),
+};
+
+function getCached<T>(cacheMap: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = cacheMap.get(key);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
+    return entry.data;
+  }
+  return null;
+}
+
+function setCache<T>(cacheMap: Map<string, CacheEntry<T>>, key: string, data: T): void {
+  cacheMap.set(key, { data, timestamp: Date.now() });
+}
+
 interface LinearIssue {
   id: string;
   identifier: string;
@@ -15,7 +44,7 @@ interface LinearIssue {
   state: { name: string };
   priority: number;
   assignee?: { name: string; email: string };
-  labels: { nodes: Array<{ name: string }> };
+  labels: { nodes: Array<{ id: string; name: string }> };
   createdAt?: string;
   updatedAt?: string;
 }
@@ -153,7 +182,7 @@ export async function createLinearIssue(
             url
             state { name }
             priority
-            labels { nodes { name } }
+            labels { nodes { id name } }
           }
         }
       }
@@ -204,7 +233,7 @@ export async function searchLinearIssues(
             url
             state { name }
             priority
-            labels { nodes { name } }
+            labels { nodes { id name } }
           }
         }
       }
@@ -268,7 +297,7 @@ export async function getLinearIssue(
             state { name }
             priority
             assignee { name email }
-            labels { nodes { name } }
+            labels { nodes { id name } }
             createdAt
             updatedAt
           }
@@ -324,7 +353,7 @@ export async function listLinearIssues(
             state { name }
             priority
             assignee { name email }
-            labels { nodes { name } }
+            labels { nodes { id name } }
             updatedAt
           }
         }
@@ -380,7 +409,7 @@ export async function updateLinearIssue(
             state { name }
             priority
             assignee { name email }
-            labels { nodes { name } }
+            labels { nodes { id name } }
           }
         }
       }
@@ -550,17 +579,23 @@ export function formatIssueDetailedForDiscord(issue: LinearIssue): string {
 }
 
 /**
- * Get team members
+ * Get team members (with caching)
  */
 export async function getLinearUsers(
   apiKey: string,
   teamId: string
 ): Promise<{ success: boolean; users?: LinearUser[]; error?: string }> {
+  // Check cache first
+  const cached = getCached(cache.users, teamId);
+  if (cached) {
+    return { success: true, users: cached };
+  }
+
   try {
     const query = `
-      query GetTeamMembers($teamId: String!) {
+      query GetTeamMembers($teamId: String!, $first: Int) {
         team(id: $teamId) {
-          members {
+          members(first: $first) {
             nodes {
               id
               name
@@ -574,7 +609,10 @@ export async function getLinearUsers(
 
     const result = await linearQuery<{
       team: { members: { nodes: LinearUser[] } };
-    }>(apiKey, query, { teamId });
+    }>(apiKey, query, { teamId, first: 100 });
+
+    // Cache the result
+    setCache(cache.users, teamId, result.team.members.nodes);
 
     return { success: true, users: result.team.members.nodes };
   } catch (error) {
@@ -586,17 +624,23 @@ export async function getLinearUsers(
 }
 
 /**
- * Get team labels
+ * Get team labels (with caching)
  */
 export async function getLinearLabels(
   apiKey: string,
   teamId: string
 ): Promise<{ success: boolean; labels?: LinearLabel[]; error?: string }> {
+  // Check cache first
+  const cached = getCached(cache.labels, teamId);
+  if (cached) {
+    return { success: true, labels: cached };
+  }
+
   try {
     const query = `
-      query GetTeamLabels($teamId: String!) {
+      query GetTeamLabels($teamId: String!, $first: Int) {
         team(id: $teamId) {
-          labels {
+          labels(first: $first) {
             nodes {
               id
               name
@@ -609,7 +653,10 @@ export async function getLinearLabels(
 
     const result = await linearQuery<{
       team: { labels: { nodes: LinearLabel[] } };
-    }>(apiKey, query, { teamId });
+    }>(apiKey, query, { teamId, first: 100 });
+
+    // Cache the result
+    setCache(cache.labels, teamId, result.team.labels.nodes);
 
     return { success: true, labels: result.team.labels.nodes };
   } catch (error) {
@@ -621,16 +668,22 @@ export async function getLinearLabels(
 }
 
 /**
- * Get team projects
+ * Get team projects (with caching)
  */
 export async function getLinearProjects(
   apiKey: string,
   teamId: string
 ): Promise<{ success: boolean; projects?: LinearProject[]; error?: string }> {
+  // Check cache first
+  const cached = getCached(cache.projects, teamId);
+  if (cached) {
+    return { success: true, projects: cached };
+  }
+
   try {
     const query = `
       query GetTeamProjects($filter: ProjectFilter) {
-        projects(filter: $filter, first: 50) {
+        projects(filter: $filter, first: 100) {
           nodes {
             id
             name
@@ -648,6 +701,9 @@ export async function getLinearProjects(
       },
     });
 
+    // Cache the result
+    setCache(cache.projects, teamId, result.projects.nodes);
+
     return { success: true, projects: result.projects.nodes };
   } catch (error) {
     return {
@@ -658,7 +714,7 @@ export async function getLinearProjects(
 }
 
 /**
- * Find user by name (case-insensitive partial match)
+ * Find user by name (prefers exact match, handles ambiguous partial matches)
  */
 export async function findLinearUser(
   apiKey: string,
@@ -670,23 +726,45 @@ export async function findLinearUser(
     return { success: false, error: result.error ?? 'Failed to fetch users' };
   }
 
-  const nameLower = nameQuery.toLowerCase();
-  const user = result.users.find(
+  const nameLower = nameQuery.toLowerCase().trim();
+
+  // First, try exact match (case-insensitive)
+  const exactMatch = result.users.find(
+    (u) =>
+      u.name.toLowerCase() === nameLower ||
+      (u.displayName ?? '').toLowerCase() === nameLower ||
+      u.email.toLowerCase() === nameLower
+  );
+
+  if (exactMatch) {
+    return { success: true, user: exactMatch };
+  }
+
+  // Then, try partial match
+  const partialMatches = result.users.filter(
     (u) =>
       u.name.toLowerCase().includes(nameLower) ||
-      u.displayName.toLowerCase().includes(nameLower) ||
+      (u.displayName ?? '').toLowerCase().includes(nameLower) ||
       u.email.toLowerCase().includes(nameLower)
   );
 
-  if (user) {
-    return { success: true, user };
+  if (partialMatches.length === 1) {
+    return { success: true, user: partialMatches[0] };
+  }
+
+  if (partialMatches.length > 1) {
+    const suggestions = partialMatches.map((u) => u.name).join(', ');
+    return {
+      success: false,
+      error: `Ambiguous user "${nameQuery}" - multiple matches found: ${suggestions}. Please be more specific.`,
+    };
   }
 
   return { success: false, error: `User not found: ${nameQuery}` };
 }
 
 /**
- * Find label by name (case-insensitive partial match)
+ * Find label by name (prefers exact match, handles ambiguous partial matches)
  */
 export async function findLinearLabel(
   apiKey: string,
@@ -698,18 +776,35 @@ export async function findLinearLabel(
     return { success: false, error: result.error ?? 'Failed to fetch labels' };
   }
 
-  const nameLower = nameQuery.toLowerCase();
-  const label = result.labels.find((l) => l.name.toLowerCase().includes(nameLower));
+  const nameLower = nameQuery.toLowerCase().trim();
 
-  if (label) {
-    return { success: true, label };
+  // First, try exact match (case-insensitive)
+  const exactMatch = result.labels.find((l) => l.name.toLowerCase() === nameLower);
+
+  if (exactMatch) {
+    return { success: true, label: exactMatch };
+  }
+
+  // Then, try partial match
+  const partialMatches = result.labels.filter((l) => l.name.toLowerCase().includes(nameLower));
+
+  if (partialMatches.length === 1) {
+    return { success: true, label: partialMatches[0] };
+  }
+
+  if (partialMatches.length > 1) {
+    const suggestions = partialMatches.map((l) => l.name).join(', ');
+    return {
+      success: false,
+      error: `Ambiguous label "${nameQuery}" - multiple matches found: ${suggestions}. Please be more specific.`,
+    };
   }
 
   return { success: false, error: `Label not found: ${nameQuery}` };
 }
 
 /**
- * Find project by name (case-insensitive partial match)
+ * Find project by name (prefers exact match, handles ambiguous partial matches)
  */
 export async function findLinearProject(
   apiKey: string,
@@ -721,11 +816,28 @@ export async function findLinearProject(
     return { success: false, error: result.error ?? 'Failed to fetch projects' };
   }
 
-  const nameLower = nameQuery.toLowerCase();
-  const project = result.projects.find((p) => p.name.toLowerCase().includes(nameLower));
+  const nameLower = nameQuery.toLowerCase().trim();
 
-  if (project) {
-    return { success: true, project };
+  // First, try exact match (case-insensitive)
+  const exactMatch = result.projects.find((p) => p.name.toLowerCase() === nameLower);
+
+  if (exactMatch) {
+    return { success: true, project: exactMatch };
+  }
+
+  // Then, try partial match
+  const partialMatches = result.projects.filter((p) => p.name.toLowerCase().includes(nameLower));
+
+  if (partialMatches.length === 1) {
+    return { success: true, project: partialMatches[0] };
+  }
+
+  if (partialMatches.length > 1) {
+    const suggestions = partialMatches.map((p) => p.name).join(', ');
+    return {
+      success: false,
+      error: `Ambiguous project "${nameQuery}" - multiple matches found: ${suggestions}. Please be more specific.`,
+    };
   }
 
   return { success: false, error: `Project not found: ${nameQuery}` };

@@ -41,11 +41,13 @@ IMPORTANT: You CAN update issues. Use the update_linear_issue tool to change:
 - status: backlog, todo, in_progress, done, canceled
 - priority: urgent, high, normal, low
 - assignee: Use team member names like "Justin", "Rod"
-- labels: Array of label names like ["Bug", "Feature"]
+- labels: Array of label names like ["Bug", "Feature"] - these are ADDED to existing labels
 - project: Project name like "TAI v1"
 - title/description: Update text content
 
+Note: Labels are ADDITIVE - new labels are added without removing existing ones.
 When assigning users or setting labels/projects, use the list_ tools first if you need to see available options.
+Use full names when possible to avoid ambiguous matches.
 
 Guidelines:
 - Be concise - Discord has a 2000 character limit
@@ -188,7 +190,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
           labels: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Label names to set on the issue (e.g., ["Bug", "Priority"])',
+            description: 'Label names to ADD to the issue (additive, does not remove existing labels)',
           },
           project: {
             type: 'string',
@@ -386,7 +388,7 @@ async function executeTool(
         description?: string;
       };
 
-      // First get the issue to get its ID
+      // First get the issue to get its ID and existing labels
       const issueResult = await getLinearIssue(config.linearApiKey, config.linearTeamId, identifier);
       if (!issueResult.success || !issueResult.issue) {
         return {
@@ -394,6 +396,9 @@ async function executeTool(
           success: false,
         };
       }
+
+      // Collect all resolution errors before failing
+      const resolutionErrors: string[] = [];
 
       // If status is being changed, get the status ID
       let stateId: string | undefined;
@@ -413,6 +418,8 @@ async function executeTool(
           );
           if (foundStatus) {
             stateId = foundStatus.id;
+          } else {
+            resolutionErrors.push(`Status not found: ${status}`);
           }
         }
       }
@@ -424,28 +431,34 @@ async function executeTool(
         if (userResult.success && userResult.user) {
           assigneeId = userResult.user.id;
         } else {
-          return {
-            result: `❌ User not found: ${assignee}`,
-            success: false,
-          };
+          resolutionErrors.push(userResult.error ?? `User not found: ${assignee}`);
         }
       }
 
-      // Resolve label names to IDs
+      // Resolve label names to IDs (ADDITIVE - merge with existing labels)
       let labelIds: string[] | undefined;
       if (labels && labels.length > 0) {
-        labelIds = [];
+        // Start with existing label IDs from the issue (now included in query)
+        const existingLabelIds = new Set<string>(
+          issueResult.issue.labels.nodes.map((l) => l.id)
+        );
+
+        // Add new labels
+        const labelErrors: string[] = [];
         for (const labelName of labels) {
           const labelResult = await findLinearLabel(config.linearApiKey, config.linearTeamId, labelName);
           if (labelResult.success && labelResult.label) {
-            labelIds.push(labelResult.label.id);
+            existingLabelIds.add(labelResult.label.id);
           } else {
-            return {
-              result: `❌ Label not found: ${labelName}`,
-              success: false,
-            };
+            labelErrors.push(labelResult.error ?? `Label not found: ${labelName}`);
           }
         }
+
+        if (labelErrors.length > 0) {
+          resolutionErrors.push(...labelErrors);
+        }
+
+        labelIds = Array.from(existingLabelIds);
       }
 
       // Resolve project name to ID
@@ -455,11 +468,16 @@ async function executeTool(
         if (projectResult.success && projectResult.project) {
           projectId = projectResult.project.id;
         } else {
-          return {
-            result: `❌ Project not found: ${project}`,
-            success: false,
-          };
+          resolutionErrors.push(projectResult.error ?? `Project not found: ${project}`);
         }
+      }
+
+      // If any resolution errors, return them all
+      if (resolutionErrors.length > 0) {
+        return {
+          result: `❌ Resolution errors:\n${resolutionErrors.map((e) => `• ${e}`).join('\n')}`,
+          success: false,
+        };
       }
 
       const result = await updateLinearIssue(config.linearApiKey, issueResult.issue.id, {
@@ -477,7 +495,7 @@ async function executeTool(
         if (status) changes.push(`status → ${status}`);
         if (priority) changes.push(`priority → ${priority}`);
         if (assignee) changes.push(`assignee → ${assignee}`);
-        if (labels) changes.push(`labels → ${labels.join(', ')}`);
+        if (labels) changes.push(`labels added: ${labels.join(', ')}`);
         if (project) changes.push(`project → ${project}`);
         if (title) changes.push(`title updated`);
         if (description) changes.push(`description updated`);
