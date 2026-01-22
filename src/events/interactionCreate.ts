@@ -1,4 +1,4 @@
-import type { Interaction } from 'discord.js';
+import { ChannelType, type Interaction, type TextBasedChannel } from 'discord.js';
 import type { BotConfig } from '../types.js';
 import { parseTaiCommand, type TaiCommandInteraction } from '../commands/tai.js';
 import { collectContext } from '../services/context-collector.js';
@@ -6,6 +6,17 @@ import { sendAgentRequest } from '../services/agent-client.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
 import { checkPermissions } from '../middleware/permissions.js';
+
+/**
+ * Get channel name safely (returns null for DMs)
+ */
+function getChannelName(channel: TextBasedChannel | null): string | null {
+  if (!channel) return null;
+  if (channel.type === ChannelType.DM || channel.type === ChannelType.GroupDM) {
+    return null;
+  }
+  return 'name' in channel ? channel.name : null;
+}
 
 /**
  * Handle slash command interactions
@@ -82,7 +93,7 @@ export async function handleInteractionCreate(
         },
         channel: {
           id: interaction.channelId,
-          name: interaction.channel?.isDMBased() ? null : interaction.channel?.name ?? null,
+          name: getChannelName(interaction.channel),
         },
         guild: interaction.guild
           ? {

@@ -1,10 +1,20 @@
-import type { Client, Message } from 'discord.js';
+import { ChannelType, type Client, type Message } from 'discord.js';
 import type { BotConfig } from '../types.js';
 import { collectContext } from '../services/context-collector.js';
 import { sendAgentRequest } from '../services/agent-client.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
 import { checkPermissions } from '../middleware/permissions.js';
+
+/**
+ * Get channel name safely (returns null for DMs)
+ */
+function getChannelName(channel: Message['channel']): string | null {
+  if (channel.type === ChannelType.DM || channel.type === ChannelType.GroupDM) {
+    return null;
+  }
+  return 'name' in channel ? channel.name : null;
+}
 
 /**
  * Handle @TAIBot mentions in messages
@@ -48,8 +58,10 @@ export async function handleMessageCreate(
     return;
   }
 
-  // Show typing indicator
-  await message.channel.sendTyping();
+  // Show typing indicator (not available on all channel types)
+  if ('sendTyping' in message.channel) {
+    await message.channel.sendTyping();
+  }
 
   // Send thinking reaction
   await message.react('🤔');
@@ -70,7 +82,7 @@ export async function handleMessageCreate(
         },
         channel: {
           id: message.channel.id,
-          name: message.channel.isDMBased() ? null : message.channel.name,
+          name: getChannelName(message.channel),
         },
         guild: message.guild
           ? {
