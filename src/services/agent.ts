@@ -9,21 +9,29 @@ import type { BotConfig, ContextMessage, UserTier } from '../types.js';
 import {
   createLinearIssue,
   searchLinearIssues,
+  getLinearIssue,
+  listLinearIssues,
+  updateLinearIssue,
+  addLinearComment,
+  getLinearStatuses,
   formatIssueForDiscord,
+  formatIssueDetailedForDiscord,
 } from './linear-client.js';
 
 const SYSTEM_PROMPT = `You are TAI Bot, an AI assistant for the Transformational AI team on Discord.
 
 Your capabilities:
 - Answer questions about the TAI project
-- Create Linear issues from natural language descriptions
-- Search existing Linear issues
+- Create, view, update, and search Linear issues
+- Add comments to Linear issues
+- List recent issues by status
 
 Guidelines:
 - Be concise - Discord has a 2000 character limit
 - Use markdown formatting (bold, code blocks, lists)
 - When creating Linear issues, extract a clear title and detailed description
-- For searches, summarize results clearly
+- For issue lookups, use the identifier format (e.g., COD-379)
+- When updating issues, confirm what was changed
 - If you can't help with something, explain why
 
 Current user: {username}
@@ -78,7 +86,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
     },
     {
       name: 'search_linear_issues',
-      description: 'Search for existing Linear issues. Use to find related issues or check status.',
+      description: 'Search for existing Linear issues by keywords. Use to find related issues or check for duplicates.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -97,6 +105,89 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
           },
         },
         required: ['query'],
+      },
+    },
+    {
+      name: 'get_linear_issue',
+      description: 'Get detailed information about a specific Linear issue by its identifier (e.g., COD-379).',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          identifier: {
+            type: 'string',
+            description: 'Issue identifier like COD-379',
+          },
+        },
+        required: ['identifier'],
+      },
+    },
+    {
+      name: 'list_linear_issues',
+      description: 'List recent Linear issues, optionally filtered by status. Use to see what the team is working on.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['backlog', 'todo', 'in_progress', 'done', 'canceled'],
+            description: 'Filter by status (optional)',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum results (default 10, max 25)',
+          },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'update_linear_issue',
+      description: 'Update an existing Linear issue. Can change status, priority, title, or description.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          identifier: {
+            type: 'string',
+            description: 'Issue identifier like COD-379',
+          },
+          status: {
+            type: 'string',
+            enum: ['backlog', 'todo', 'in_progress', 'done', 'canceled'],
+            description: 'New status for the issue',
+          },
+          priority: {
+            type: 'string',
+            enum: ['urgent', 'high', 'normal', 'low'],
+            description: 'New priority for the issue',
+          },
+          title: {
+            type: 'string',
+            description: 'New title for the issue',
+          },
+          description: {
+            type: 'string',
+            description: 'New description for the issue',
+          },
+        },
+        required: ['identifier'],
+      },
+    },
+    {
+      name: 'add_linear_comment',
+      description: 'Add a comment to a Linear issue. Use to provide updates or feedback on an issue.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          identifier: {
+            type: 'string',
+            description: 'Issue identifier like COD-379',
+          },
+          comment: {
+            type: 'string',
+            description: 'Comment text in markdown',
+          },
+        },
+        required: ['identifier', 'comment'],
       },
     },
   ];
@@ -167,6 +258,153 @@ async function executeTool(
 
       return {
         result: `❌ Search failed: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'get_linear_issue': {
+      const { identifier } = toolInput as { identifier: string };
+
+      const result = await getLinearIssue(config.linearApiKey, identifier);
+
+      if (result.success && result.issue) {
+        return {
+          result: formatIssueDetailedForDiscord(result.issue),
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Issue not found: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'list_linear_issues': {
+      const { status, limit } = toolInput as {
+        status?: string;
+        limit?: number;
+      };
+
+      const result = await listLinearIssues(config.linearApiKey, config.linearTeamId, {
+        status,
+        limit: Math.min(limit ?? 10, 25),
+      });
+
+      if (result.success && result.issues) {
+        if (result.issues.length === 0) {
+          return {
+            result: status ? `No ${status} issues found` : 'No issues found',
+            success: true,
+          };
+        }
+
+        const issueList = result.issues.map(formatIssueForDiscord).join('\n\n');
+        const header = status ? `${status.replace('_', ' ')} issues` : 'Recent issues';
+        return {
+          result: `**${header}** (${result.issues.length}):\n\n${issueList}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to list issues: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'update_linear_issue': {
+      const { identifier, status, priority, title, description } = toolInput as {
+        identifier: string;
+        status?: string;
+        priority?: 'urgent' | 'high' | 'normal' | 'low';
+        title?: string;
+        description?: string;
+      };
+
+      // First get the issue to get its ID
+      const issueResult = await getLinearIssue(config.linearApiKey, identifier);
+      if (!issueResult.success || !issueResult.issue) {
+        return {
+          result: `❌ Issue not found: ${identifier}`,
+          success: false,
+        };
+      }
+
+      // If status is being changed, get the status ID
+      let stateId: string | undefined;
+      if (status) {
+        const statusesResult = await getLinearStatuses(config.linearApiKey, config.linearTeamId);
+        if (statusesResult.success && statusesResult.statuses) {
+          const statusMap: Record<string, string> = {
+            backlog: 'Backlog',
+            todo: 'Todo',
+            in_progress: 'In Progress',
+            done: 'Done',
+            canceled: 'Canceled',
+          };
+          const targetStatus = statusMap[status] ?? status;
+          const foundStatus = statusesResult.statuses.find(
+            (s) => s.name.toLowerCase() === targetStatus.toLowerCase()
+          );
+          if (foundStatus) {
+            stateId = foundStatus.id;
+          }
+        }
+      }
+
+      const result = await updateLinearIssue(config.linearApiKey, issueResult.issue.id, {
+        stateId,
+        priority,
+        title,
+        description,
+      });
+
+      if (result.success && result.issue) {
+        const changes: string[] = [];
+        if (status) changes.push(`status → ${status}`);
+        if (priority) changes.push(`priority → ${priority}`);
+        if (title) changes.push(`title updated`);
+        if (description) changes.push(`description updated`);
+
+        return {
+          result: `✅ Updated **${identifier}**:\n${changes.join(', ')}\n\n${formatIssueForDiscord(result.issue)}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to update issue: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'add_linear_comment': {
+      const { identifier, comment } = toolInput as {
+        identifier: string;
+        comment: string;
+      };
+
+      // First get the issue to get its ID
+      const issueResult = await getLinearIssue(config.linearApiKey, identifier);
+      if (!issueResult.success || !issueResult.issue) {
+        return {
+          result: `❌ Issue not found: ${identifier}`,
+          success: false,
+        };
+      }
+
+      const result = await addLinearComment(config.linearApiKey, issueResult.issue.id, comment);
+
+      if (result.success && result.comment) {
+        return {
+          result: `✅ Comment added to **${identifier}** by ${result.comment.user.name}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to add comment: ${result.error ?? 'Unknown error'}`,
         success: false,
       };
     }

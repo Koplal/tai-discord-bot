@@ -10,10 +10,36 @@ interface LinearIssue {
   id: string;
   identifier: string;
   title: string;
+  description?: string;
   url: string;
   state: { name: string };
   priority: number;
+  assignee?: { name: string; email: string };
   labels: { nodes: Array<{ name: string }> };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface LinearComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  user: { name: string };
+}
+
+interface UpdateIssueInput {
+  stateId?: string;
+  stateName?: string;
+  priority?: 'urgent' | 'high' | 'normal' | 'low';
+  assigneeId?: string;
+  title?: string;
+  description?: string;
+}
+
+interface ListIssuesInput {
+  status?: string;
+  limit?: number;
+  assignee?: string;
 }
 
 interface CreateIssueInput {
@@ -199,6 +225,229 @@ export async function searchLinearIssues(
 }
 
 /**
+ * Get a Linear issue by identifier (e.g., "COD-379")
+ */
+export async function getLinearIssue(
+  apiKey: string,
+  identifier: string
+): Promise<{ success: boolean; issue?: LinearIssue; error?: string }> {
+  try {
+    const query = `
+      query GetIssue($id: String!) {
+        issue(id: $id) {
+          id
+          identifier
+          title
+          description
+          url
+          state { name }
+          priority
+          assignee { name email }
+          labels { nodes { name } }
+          createdAt
+          updatedAt
+        }
+      }
+    `;
+
+    const result = await linearQuery<{ issue: LinearIssue }>(apiKey, query, { id: identifier });
+
+    if (result.issue) {
+      return { success: true, issue: result.issue };
+    }
+
+    return { success: false, error: 'Issue not found' };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * List Linear issues with filters
+ */
+export async function listLinearIssues(
+  apiKey: string,
+  teamId: string,
+  input: ListIssuesInput
+): Promise<{ success: boolean; issues?: LinearIssue[]; error?: string }> {
+  try {
+    const query = `
+      query ListIssues($filter: IssueFilter, $first: Int) {
+        issues(filter: $filter, first: $first, orderBy: updatedAt) {
+          nodes {
+            id
+            identifier
+            title
+            url
+            state { name }
+            priority
+            assignee { name email }
+            labels { nodes { name } }
+            updatedAt
+          }
+        }
+      }
+    `;
+
+    const filter: Record<string, unknown> = {
+      team: { id: { eq: teamId } },
+    };
+
+    if (input.status) {
+      const statusMap: Record<string, string> = {
+        backlog: 'Backlog',
+        todo: 'Todo',
+        in_progress: 'In Progress',
+        done: 'Done',
+        canceled: 'Canceled',
+      };
+      filter.state = { name: { eq: statusMap[input.status] ?? input.status } };
+    }
+
+    const result = await linearQuery<{
+      issues: { nodes: LinearIssue[] };
+    }>(apiKey, query, { filter, first: input.limit ?? 10 });
+
+    return { success: true, issues: result.issues.nodes };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Update a Linear issue
+ */
+export async function updateLinearIssue(
+  apiKey: string,
+  issueId: string,
+  input: UpdateIssueInput
+): Promise<{ success: boolean; issue?: LinearIssue; error?: string }> {
+  try {
+    const mutation = `
+      mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+        issueUpdate(id: $id, input: $input) {
+          success
+          issue {
+            id
+            identifier
+            title
+            url
+            state { name }
+            priority
+            assignee { name email }
+            labels { nodes { name } }
+          }
+        }
+      }
+    `;
+
+    const updateInput: Record<string, unknown> = {};
+
+    if (input.title) updateInput.title = input.title;
+    if (input.description) updateInput.description = input.description;
+    if (input.priority) updateInput.priority = priorityToNumber(input.priority);
+    if (input.stateId) updateInput.stateId = input.stateId;
+    if (input.assigneeId) updateInput.assigneeId = input.assigneeId;
+
+    const result = await linearQuery<{
+      issueUpdate: { success: boolean; issue: LinearIssue };
+    }>(apiKey, mutation, { id: issueId, input: updateInput });
+
+    if (result.issueUpdate.success) {
+      return { success: true, issue: result.issueUpdate.issue };
+    }
+
+    return { success: false, error: 'Issue update failed' };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Add a comment to a Linear issue
+ */
+export async function addLinearComment(
+  apiKey: string,
+  issueId: string,
+  body: string
+): Promise<{ success: boolean; comment?: LinearComment; error?: string }> {
+  try {
+    const mutation = `
+      mutation AddComment($input: CommentCreateInput!) {
+        commentCreate(input: $input) {
+          success
+          comment {
+            id
+            body
+            createdAt
+            user { name }
+          }
+        }
+      }
+    `;
+
+    const result = await linearQuery<{
+      commentCreate: { success: boolean; comment: LinearComment };
+    }>(apiKey, mutation, { input: { issueId, body } });
+
+    if (result.commentCreate.success) {
+      return { success: true, comment: result.commentCreate.comment };
+    }
+
+    return { success: false, error: 'Comment creation failed' };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Get issue statuses for a team
+ */
+export async function getLinearStatuses(
+  apiKey: string,
+  teamId: string
+): Promise<{ success: boolean; statuses?: Array<{ id: string; name: string; type: string }>; error?: string }> {
+  try {
+    const query = `
+      query GetStatuses($teamId: String!) {
+        team(id: $teamId) {
+          states {
+            nodes {
+              id
+              name
+              type
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await linearQuery<{
+      team: { states: { nodes: Array<{ id: string; name: string; type: string }> } };
+    }>(apiKey, query, { teamId });
+
+    return { success: true, statuses: result.team.states.nodes };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
  * Format an issue for Discord display
  */
 export function formatIssueForDiscord(issue: LinearIssue): string {
@@ -217,4 +466,44 @@ export function formatIssueForDiscord(issue: LinearIssue): string {
     `${priorityEmoji[issue.priority] ?? '⚪'} ${issue.state.name}${labels ? ` | ${labels}` : ''}`,
     `🔗 ${issue.url}`,
   ].join('\n');
+}
+
+/**
+ * Format an issue with full details for Discord display
+ */
+export function formatIssueDetailedForDiscord(issue: LinearIssue): string {
+  const priorityEmoji: Record<number, string> = {
+    1: '🔴 Urgent',
+    2: '🟠 High',
+    3: '🟡 Normal',
+    4: '🟢 Low',
+    0: '⚪ No priority',
+  };
+
+  const labels = issue.labels.nodes.map((l) => l.name).join(', ');
+  const lines = [
+    `**${issue.identifier}**: ${issue.title}`,
+    ``,
+    `📊 **Status:** ${issue.state.name}`,
+    `${priorityEmoji[issue.priority] ?? '⚪ No priority'}`,
+  ];
+
+  if (issue.assignee) {
+    lines.push(`👤 **Assignee:** ${issue.assignee.name}`);
+  }
+
+  if (labels) {
+    lines.push(`🏷️ **Labels:** ${labels}`);
+  }
+
+  if (issue.description) {
+    const truncatedDesc = issue.description.length > 500
+      ? issue.description.substring(0, 500) + '...'
+      : issue.description;
+    lines.push(``, `📝 **Description:**`, truncatedDesc);
+  }
+
+  lines.push(``, `🔗 ${issue.url}`);
+
+  return lines.join('\n');
 }
