@@ -4,14 +4,13 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Install dependencies
-COPY package.json package-lock.json* pnpm-lock.yaml* ./
-RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN pnpm install --frozen-lockfile
+COPY package.json ./
+RUN npm install
 
 # Copy source and build
 COPY tsconfig.json ./
 COPY src/ ./src/
-RUN pnpm run build
+RUN npm run build
 
 # Production stage
 FROM node:22-alpine AS runner
@@ -23,9 +22,8 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 discordbot
 
 # Install production dependencies only
-COPY package.json package-lock.json* pnpm-lock.yaml* ./
-RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN pnpm install --prod --frozen-lockfile
+COPY package.json ./
+RUN npm install --omit=dev
 
 # Copy built application
 COPY --from=builder /app/dist ./dist
