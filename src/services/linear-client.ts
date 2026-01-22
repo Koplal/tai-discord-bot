@@ -55,7 +55,7 @@ async function linearQuery<T>(
     throw new Error(`Linear API error: ${response.status} - ${text}`);
   }
 
-  const result: LinearGraphQLResponse<T> = await response.json();
+  const result = (await response.json()) as LinearGraphQLResponse<T>;
 
   if (result.errors) {
     throw new Error(`Linear GraphQL error: ${result.errors[0]?.message ?? 'Unknown error'}`);
