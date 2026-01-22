@@ -28,12 +28,16 @@ interface SearchIssuesInput {
   limit?: number;
 }
 
+interface LinearGraphQLResponse<T> {
+  data?: T;
+  errors?: Array<{ message: string }>;
+}
+
 /**
  * Execute a GraphQL query against Linear API
  */
 async function linearQuery<T>(
   apiKey: string,
-  teamId: string,
   query: string,
   variables?: Record<string, unknown>
 ): Promise<T> {
@@ -51,13 +55,17 @@ async function linearQuery<T>(
     throw new Error(`Linear API error: ${response.status} - ${text}`);
   }
 
-  const result = await response.json();
+  const result: LinearGraphQLResponse<T> = await response.json();
 
   if (result.errors) {
     throw new Error(`Linear GraphQL error: ${result.errors[0]?.message ?? 'Unknown error'}`);
   }
 
-  return result.data as T;
+  if (!result.data) {
+    throw new Error('Linear API returned no data');
+  }
+
+  return result.data;
 }
 
 /**
@@ -115,7 +123,7 @@ export async function createLinearIssue(
 
     const result = await linearQuery<{
       issueCreate: { success: boolean; issue: LinearIssue };
-    }>(apiKey, teamId, mutation, variables);
+    }>(apiKey, mutation, variables);
 
     if (result.issueCreate.success) {
       return { success: true, issue: result.issueCreate.issue };
@@ -179,7 +187,7 @@ export async function searchLinearIssues(
 
     const result = await linearQuery<{
       issues: { nodes: LinearIssue[] };
-    }>(apiKey, teamId, query, { filter, first: input.limit ?? 5 });
+    }>(apiKey, query, { filter, first: input.limit ?? 5 });
 
     return { success: true, issues: result.issues.nodes };
   } catch (error) {
