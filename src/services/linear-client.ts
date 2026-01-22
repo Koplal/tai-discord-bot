@@ -256,7 +256,7 @@ export async function getLinearIssue(
 
     // Parse identifier to extract team key and number (e.g., "COD-379" -> number: 379)
     const match = identifier.match(/^([A-Z]+)-(\d+)$/i);
-    if (!match) {
+    if (!match || !match[2]) {
       return { success: false, error: `Invalid identifier format: ${identifier}` };
     }
 
