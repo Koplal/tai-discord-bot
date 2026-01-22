@@ -647,12 +647,25 @@ export async function processAgentRequest(
   // Build messages
   const messages: Anthropic.MessageParam[] = [];
 
-  // Add context (last 10 messages)
+  // Add context (last 10 messages), filtering out empty content
+  // (Anthropic API requires all messages to have non-empty content)
   for (const ctx of request.context.slice(-10)) {
+    if (!ctx.content || ctx.content.trim() === '') {
+      continue;
+    }
     messages.push({
       role: ctx.role === 'user' ? 'user' : 'assistant',
       content: ctx.content,
     });
+  }
+
+  // Validate request content is not empty
+  if (!request.content || request.content.trim() === '') {
+    return {
+      content: 'Please provide a message.',
+      tokensUsed: 0,
+      processingTimeMs: Date.now() - startTime,
+    };
   }
 
   // Add current message

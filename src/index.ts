@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { Client, Events, GatewayIntentBits, Partials } from 'discord.js';
 import { loadConfig } from './types.js';
 import { handleReady } from './events/ready.js';
 import { handleMessageCreate } from './events/messageCreate.js';
@@ -19,7 +19,7 @@ const client = new Client({
 });
 
 // Register event handlers
-client.once('ready', (readyClient) => handleReady(readyClient, config));
+client.once(Events.ClientReady, (readyClient) => handleReady(readyClient, config));
 client.on('messageCreate', (message) => handleMessageCreate(message, client, config));
 client.on('interactionCreate', (interaction) => handleInteractionCreate(interaction, config));
 
