@@ -943,6 +943,20 @@ type(scope): description (COD-XXX)
 
 TAI Bot (Discord) provides direct access to Linear operations via `@TAIBot` mentions or `/tai` slash commands.
 
+### Linear Field Types
+
+Issues have distinct field categories (not interchangeable):
+
+| Field | Description | Example Values |
+|-------|-------------|----------------|
+| **Status** | Workflow state | backlog, todo, in_progress, done |
+| **Priority** | Urgency level | urgent, high, medium, low |
+| **Assignee** | Team member | Justin, Landon, Haley |
+| **Labels** | Tags/categories | Bug, Feature, Blocked |
+| **Project** | Issue container | TAI v1 |
+| **Cycle** | Sprint period | Cycle 3 (Jan 5-19) |
+| **Estimate** | Effort size | XS, S, M, L, XL |
+
 ### 9.1 Available Tools
 
 | Tool | Description | Example |

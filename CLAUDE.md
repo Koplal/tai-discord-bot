@@ -69,12 +69,26 @@ Premium+ users get access to Linear tools (create/search issues, cycles).
 | `search_linear_issues` | Search by keywords |
 | `get_linear_issue` | Get issue details (COD-XXX) |
 | `list_linear_issues` | List recent issues |
-| `update_linear_issue` | Update status/priority/assignee/labels |
+| `update_linear_issue` | Update status/priority/assignee/labels/cycle |
 | `add_linear_comment` | Add comments |
 | `list_linear_users` | List team members |
 | `list_linear_labels` | List available labels |
 | `list_linear_projects` | List projects |
 | `list_linear_cycles` | List current/upcoming sprints |
+
+## Linear Issue Fields
+
+Issues have these distinct field types (not interchangeable):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| Status | Workflow state | backlog, todo, in_progress, done, canceled |
+| Priority | Numeric (0-4) | urgent, high, medium, low, none |
+| Assignee | User | Team member responsible |
+| Labels | Tags | Type (bug/feature), status (blocked) |
+| Project | Container | Groups related issues |
+| Cycle | Sprint | 2-week work periods (current/upcoming) |
+| Estimate | Points | T-shirt size (XS/S/M/L/XL) |
 
 ## Estimates
 
