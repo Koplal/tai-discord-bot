@@ -59,7 +59,34 @@ src/
 | `/tai create-issue <desc>` | Create Linear issues | Premium+ |
 | `@TAIBot <message>` | Conversational requests | All users |
 
-Premium+ users get access to Linear tools (create/search issues).
+Premium+ users get access to Linear tools (create/search issues, cycles).
+
+## Linear Tools
+
+| Tool | Description |
+|------|-------------|
+| `create_linear_issue` | Create new issues |
+| `search_linear_issues` | Search by keywords |
+| `get_linear_issue` | Get issue details (COD-XXX) |
+| `list_linear_issues` | List recent issues |
+| `update_linear_issue` | Update status/priority/assignee/labels |
+| `add_linear_comment` | Add comments |
+| `list_linear_users` | List team members |
+| `list_linear_labels` | List available labels |
+| `list_linear_projects` | List projects |
+| `list_linear_cycles` | List current/upcoming sprints |
+
+## Estimates
+
+Use T-shirt sizes (not Fibonacci):
+
+| Size | Points | Time |
+|------|--------|------|
+| XS | 1 | < 2 hours |
+| S | 2 | Half day |
+| M | 3 | 1 day |
+| L | 5 | 2-3 days |
+| XL | 8 | ~1 week (decompose) |
 
 ## Development
 

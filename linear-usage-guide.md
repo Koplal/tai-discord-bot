@@ -16,7 +16,7 @@
 | **Branch Name** | `<type>/COD-XXX-description` — e.g., `feature/COD-350-memory-export` |
 | **Commit** | `type(scope): description closes COD-XXX` for auto-close |
 | **Max Labels** | 3 per issue (1 type + 1 priority + 1 optional) |
-| **Estimates** | Fibonacci: 1, 2, 3, 5, 8 — break down 8+ before sprint |
+| **Estimates** | T-shirt: XS=1, S=2, M=3, L=5, XL=8 — break down XL before sprint |
 | **Cycles** | 2-week sprints, auto-rollover enabled |
 | **Archive** | Auto-archive 1 month after Done |
 
@@ -404,22 +404,22 @@ Bad:
 
 ## 3. Estimation Guidelines
 
-### 3.1 Fibonacci Scale
+### 3.1 T-Shirt Size Scale
 
-| Points | Complexity | Time Estimate | Examples |
-|--------|------------|---------------|----------|
-| **1** | Trivial | < 2 hours | Typo fix, copy change, config tweak |
-| **2** | Small | Half day | Simple bug fix, add field to form |
-| **3** | Medium | 1 day | New API endpoint, component refactor |
-| **5** | Large | 2-3 days | Feature with multiple files, integration |
-| **8** | X-Large | ~1 week | Major feature, significant complexity |
+| Size | Points | Time Estimate | Examples |
+|------|--------|---------------|----------|
+| **XS** | 1 | < 2 hours | Typo fix, copy change, config tweak |
+| **S** | 2 | Half day | Simple bug fix, add field to form |
+| **M** | 3 | 1 day | New API endpoint, component refactor |
+| **L** | 5 | 2-3 days | Feature with multiple files, integration |
+| **XL** | 8 | ~1 week | Major feature, significant complexity |
 
 ### 3.2 Estimation Rules
 
-1. **8+ points = decompose** — Break into smaller issues before sprint
-2. **Uncertainty = higher estimate** — When unsure, round up
+1. **XL = decompose** — Break into smaller issues before sprint
+2. **Uncertainty = larger size** — When unsure, size up
 3. **Include testing** — Estimate includes writing tests
-4. **No 0-point issues** — Minimum is 1 point
+4. **No 0-point issues** — Minimum is XS (1 point)
 5. **Re-estimate if scope changes** — Update when requirements clarify
 
 ---
@@ -780,6 +780,17 @@ See `~/.claude/mcp-servers/linear-extended/README.md` for full documentation.
 "List active cycles for the team"
 ```
 
+**Cycle Tools (TAI Bot):**
+
+```
+# Via Discord @TAIBot or /tai command
+"Show me the current cycle"
+
+"List upcoming cycles"
+
+"What cycles are available?"
+```
+
 **Relationships:**
 
 ```
@@ -928,9 +939,70 @@ type(scope): description (COD-XXX)
 
 ---
 
-## 9. Anti-Patterns to Avoid
+## 9. TAI Bot Linear Tools
 
-### 9.1 Issue Management
+TAI Bot (Discord) provides direct access to Linear operations via `@TAIBot` mentions or `/tai` slash commands.
+
+### 9.1 Available Tools
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| `list_linear_cycles` | Show current/upcoming sprints | "What's the current cycle?" |
+| `create_linear_issue` | Create new tickets | "Create a bug for auth timeout" |
+| `search_linear_issues` | Find issues by keyword | "Find issues about memory" |
+| `get_linear_issue` | Get issue details | "Show me COD-379" |
+| `list_linear_issues` | List recent issues | "What's in progress?" |
+| `update_linear_issue` | Update issue fields | "Move COD-379 to done" |
+| `list_linear_users` | Show team members | "Who can I assign to?" |
+| `list_linear_labels` | Show available labels | "What labels exist?" |
+| `list_linear_projects` | Show projects | "List projects" |
+
+### 9.2 Cycle Tool Usage
+
+```
+# Current cycle only
+"Show the current sprint"
+"What cycle are we in?"
+
+# Future cycles
+"List upcoming cycles"
+"What's next after this sprint?"
+
+# All cycles
+"Show all cycles"
+```
+
+### 9.3 Estimate Syntax
+
+When creating/updating issues, use T-shirt sizes:
+```
+"Create a feature for user export, estimate M"
+"Set COD-380 estimate to L"
+"This is an XS fix"
+```
+
+| Size | Meaning | Points |
+|------|---------|--------|
+| XS | Trivial, < 2 hours | 1 |
+| S | Half day | 2 |
+| M | Full day | 3 |
+| L | 2-3 days | 5 |
+| XL | ~1 week (decompose) | 8 |
+
+---
+
+## 10. Anti-Patterns to Avoid
+
+### 10.1 TAI Bot Anti-Patterns
+
+| Anti-Pattern | Why Bad | Do Instead |
+|--------------|---------|------------|
+| Asking for Fibonacci estimates | Bot uses T-shirt sizes | Use XS, S, M, L, XL |
+| "Set estimate to 13" | Invalid size | Break into XL or smaller |
+| Asking for past cycles | Not supported | Use Linear UI for history |
+| Ambiguous user names | May fail or match wrong | Use full names |
+
+### 10.2 Issue Management
 
 | Anti-Pattern | Why Bad | Do Instead |
 |--------------|---------|------------|
@@ -941,7 +1013,7 @@ type(scope): description (COD-XXX)
 | Manual status updates | Wastes time, gets stale | Let GitHub integration automate |
 | Deep sub-issue nesting | Hard to track | Max 2 levels (epic → task → subtask) |
 
-### 9.2 GitHub Integration
+### 10.3 GitHub Integration
 
 | Anti-Pattern | Why Bad | Do Instead |
 |--------------|---------|------------|
@@ -950,7 +1022,7 @@ type(scope): description (COD-XXX)
 | PR to wrong branch | Breaks workflow | Always target staging first |
 | Ignoring blocked issues | Technical debt | Review blockers in standup |
 
-### 9.3 Linear Usage
+### 10.4 Linear Usage
 
 | Anti-Pattern | Why Bad | Do Instead |
 |--------------|---------|------------|
@@ -962,9 +1034,9 @@ type(scope): description (COD-XXX)
 
 ---
 
-## 10. Integration with TAI Workflows
+## 11. Integration with TAI Workflows
 
-### 10.1 Verification Commands
+### 11.1 Verification Commands
 
 The `/verify` commands automatically extract Linear ticket from branch name and can log results:
 
@@ -978,7 +1050,7 @@ The `/verify` commands automatically extract Linear ticket from branch name and 
 
 See: [CLAUDE.md - Verification Commands](../CLAUDE.md#verification-commands-cod-276)
 
-### 10.2 Git Workflow Integration
+### 11.2 Git Workflow Integration
 
 This guide complements the git workflow:
 
@@ -990,7 +1062,7 @@ This guide complements the git workflow:
 
 See: [git-workflow.md](./git-workflow.md)
 
-### 10.3 Release Process
+### 11.3 Release Process
 
 1. Features merged to `staging` → Linear issues auto-Done
 2. Staging validated → PR to `pre-release`

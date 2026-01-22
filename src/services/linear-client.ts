@@ -17,10 +17,12 @@ const cache: {
   users: Map<string, CacheEntry<LinearUser[]>>;
   labels: Map<string, CacheEntry<LinearLabel[]>>;
   projects: Map<string, CacheEntry<LinearProject[]>>;
+  cycles: Map<string, CacheEntry<LinearCycle[]>>;
 } = {
   users: new Map(),
   labels: new Map(),
   projects: new Map(),
+  cycles: new Map(),
 };
 
 function getCached<T>(cacheMap: Map<string, CacheEntry<T>>, key: string): T | null {
@@ -84,6 +86,15 @@ interface LinearProject {
   id: string;
   name: string;
   state: string;
+}
+
+interface LinearCycle {
+  id: string;
+  number: number;
+  name?: string;
+  startsAt: string;
+  endsAt: string;
+  isActive: boolean;
 }
 
 interface ListIssuesInput {
@@ -841,4 +852,76 @@ export async function findLinearProject(
   }
 
   return { success: false, error: `Project not found: ${nameQuery}` };
+}
+
+/**
+ * Get team cycles (current and future) with caching
+ */
+export async function getLinearCycles(
+  apiKey: string,
+  teamId: string,
+  filter: 'current' | 'future' | 'all' = 'all'
+): Promise<{ success: boolean; cycles?: LinearCycle[]; error?: string }> {
+  const cacheKey = `${teamId}:${filter}`;
+  const cached = getCached(cache.cycles, cacheKey);
+  if (cached) {
+    return { success: true, cycles: cached };
+  }
+
+  try {
+    const query = `
+      query GetTeamCycles($teamId: String!) {
+        team(id: $teamId) {
+          cycles(first: 10, orderBy: startsAt) {
+            nodes {
+              id
+              number
+              name
+              startsAt
+              endsAt
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await linearQuery<{
+      team: { cycles: { nodes: Array<{ id: string; number: number; name?: string; startsAt: string; endsAt: string }> } };
+    }>(apiKey, query, { teamId });
+
+    const now = new Date();
+    const cycles: LinearCycle[] = result.team.cycles.nodes.map((c) => ({
+      ...c,
+      isActive: new Date(c.startsAt) <= now && new Date(c.endsAt) >= now,
+    }));
+
+    // Filter based on request
+    let filteredCycles = cycles;
+    if (filter === 'current') {
+      filteredCycles = cycles.filter((c) => c.isActive);
+    } else if (filter === 'future') {
+      filteredCycles = cycles.filter((c) => new Date(c.startsAt) > now);
+    }
+
+    // Cache the result
+    setCache(cache.cycles, cacheKey, filteredCycles);
+
+    return { success: true, cycles: filteredCycles };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Format a cycle for Discord display
+ */
+export function formatCycleForDiscord(cycle: LinearCycle): string {
+  const startDate = new Date(cycle.startsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const endDate = new Date(cycle.endsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const status = cycle.isActive ? '🟢 Active' : '⏳ Upcoming';
+  const name = cycle.name ? ` - ${cycle.name}` : '';
+  return `**Cycle ${cycle.number}**${name}\n${status} | ${startDate} - ${endDate}`;
 }

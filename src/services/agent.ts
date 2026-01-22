@@ -17,11 +17,13 @@ import {
   getLinearUsers,
   getLinearLabels,
   getLinearProjects,
+  getLinearCycles,
   findLinearUser,
   findLinearLabel,
   findLinearProject,
   formatIssueForDiscord,
   formatIssueDetailedForDiscord,
+  formatCycleForDiscord,
 } from './linear-client.js';
 
 const SYSTEM_PROMPT = `You are TAI Bot, an AI assistant for the Transformational AI team on Discord.
@@ -36,6 +38,7 @@ You have the following tools available:
 - list_linear_users: List team members who can be assigned to issues
 - list_linear_labels: List available labels
 - list_linear_projects: List available projects
+- list_linear_cycles: List current and upcoming sprint cycles
 
 IMPORTANT: You CAN update issues. Use the update_linear_issue tool to change:
 - status: backlog, todo, in_progress, done, canceled
@@ -44,6 +47,14 @@ IMPORTANT: You CAN update issues. Use the update_linear_issue tool to change:
 - labels: Array of label names like ["Bug", "Feature"] - these are ADDED to existing labels
 - project: Project name like "TAI v1"
 - title/description: Update text content
+- estimate: T-shirt size (XS=1, S=2, M=3, L=5, XL=8)
+
+Estimates use T-SHIRT SIZES:
+- XS (1 point): < 2 hours, trivial changes
+- S (2 points): Half day, simple fixes
+- M (3 points): 1 day, new endpoint or component
+- L (5 points): 2-3 days, multi-file feature
+- XL (8 points): ~1 week, break down before sprint
 
 Note: Labels are ADDITIVE - new labels are added without removing existing ones.
 When assigning users or setting labels/projects, use the list_ tools first if you need to see available options.
@@ -250,6 +261,21 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
       input_schema: {
         type: 'object' as const,
         properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'list_linear_cycles',
+      description: 'List sprint cycles. Shows current and upcoming cycles with dates.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          filter: {
+            type: 'string',
+            enum: ['current', 'future', 'all'],
+            description: 'Filter cycles: current (active now), future (upcoming), or all',
+          },
+        },
         required: [],
       },
     },
@@ -614,6 +640,32 @@ async function executeTool(
 
       return {
         result: `❌ Failed to list projects: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'list_linear_cycles': {
+      const { filter } = toolInput as { filter?: 'current' | 'future' | 'all' };
+      const result = await getLinearCycles(config.linearApiKey, config.linearTeamId, filter ?? 'all');
+
+      if (result.success && result.cycles) {
+        if (result.cycles.length === 0) {
+          return {
+            result: filter === 'current' ? 'No active cycle' : 'No cycles found',
+            success: true,
+          };
+        }
+
+        const cycleList = result.cycles.map(formatCycleForDiscord).join('\n\n');
+        const header = filter === 'current' ? 'Current Cycle' : filter === 'future' ? 'Upcoming Cycles' : 'Cycles';
+        return {
+          result: `**${header}** (${result.cycles.length}):\n\n${cycleList}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to list cycles: ${result.error ?? 'Unknown error'}`,
         success: false,
       };
     }
