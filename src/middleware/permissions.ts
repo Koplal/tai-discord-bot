@@ -60,13 +60,24 @@ const ROLE_PERMISSIONS: Map<string, RolePermission> = new Map([
 
 /**
  * Default permissions for users without mapped roles
+ *
+ * NOTE: For private team bot, default to admin access.
+ * Configure ROLE_PERMISSIONS above with actual role IDs to restrict access.
  */
 const DEFAULT_PERMISSION: RolePermission = {
   roleId: 'default',
-  tier: 'free',
-  features: ['basic_chat'],
-  requestsPerMin: 10,
-  maxTokensPerDay: 50000,
+  tier: 'admin',
+  features: [
+    'basic_chat',
+    'linear_access',
+    'linear_create',
+    'linear_update',
+    'supabase_query',
+    'notion_search',
+    'admin_tools',
+  ],
+  requestsPerMin: 1000,
+  maxTokensPerDay: Infinity,
 };
 
 /**
