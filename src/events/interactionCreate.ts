@@ -2,7 +2,7 @@ import { ChannelType, type Interaction, type TextBasedChannel } from 'discord.js
 import type { BotConfig } from '../types.js';
 import { parseTaiCommand, type TaiCommandInteraction } from '../commands/tai.js';
 import { collectContext } from '../services/context-collector.js';
-import { sendAgentRequest } from '../services/agent-client.js';
+import { processAgentRequest } from '../services/agent.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
 import { checkPermissions } from '../middleware/permissions.js';
@@ -81,26 +81,14 @@ export async function handleInteractionCreate(
       enhancedPrompt += ` [Priority: ${options.priority}]`;
     }
 
-    // Send request to TAI backend
-    const response = await sendAgentRequest(
+    // Process request with Claude agent directly
+    const response = await processAgentRequest(
       {
         content: enhancedPrompt,
-        context: { messages: context },
-        user: {
-          discordId: interaction.user.id,
-          username: interaction.user.username,
-          roles: member?.roles.cache.map((r) => r.name) ?? [],
-        },
-        channel: {
-          id: interaction.channelId,
-          name: getChannelName(interaction.channel),
-        },
-        guild: interaction.guild
-          ? {
-              id: interaction.guild.id,
-              name: interaction.guild.name,
-            }
-          : undefined,
+        context,
+        username: interaction.user.username,
+        channel: getChannelName(interaction.channel) ?? 'DM',
+        tier: permissionCheck.tier,
       },
       config
     );

@@ -12,7 +12,8 @@ Linear Ticket: COD-379
 | Framework | discord.js v14 |
 | Language | TypeScript |
 | Hosting | Railway ($5-10/month) |
-| Auth | HMAC-SHA256 signatures |
+| AI | Anthropic Claude (claude-sonnet-4-20250514) |
+| Project Management | Linear GraphQL API |
 
 ## Architecture
 
@@ -20,11 +21,12 @@ Linear Ticket: COD-379
 Discord Server
     ↓ @TAIBot mention or /tai command
 Discord Bot (this repo)
-    ↓ HTTPS POST with HMAC signature
-TAI Backend (/api/discord-agent)
-    ↓ Claude Agent with tools
-MCP Servers (Linear, Supabase, Notion)
+    ├─→ Claude API (direct)
+    │       └─→ Tool use for Linear operations
+    └─→ Linear GraphQL API (direct)
 ```
+
+The bot calls Claude and Linear APIs directly, without a backend proxy.
 
 ## Project Structure
 
@@ -40,7 +42,8 @@ src/
 │   ├── messageCreate.ts     # @TAIBot mention handler
 │   └── interactionCreate.ts # Slash command handler
 ├── services/
-│   ├── agent-client.ts      # TAI backend API client
+│   ├── agent.ts             # Claude agent with Linear tools
+│   ├── linear-client.ts     # Linear GraphQL API client
 │   ├── context-collector.ts # Message history collector
 │   └── response-formatter.ts# Discord markdown formatter
 └── middleware/
@@ -53,32 +56,32 @@ src/
 | Command | Description | Access |
 |---------|-------------|--------|
 | `/tai ask <prompt>` | General questions | All users |
-| `/tai create-issue <desc>` | Create Linear issues | Members+ |
-| `/tai query <sql>` | Query Supabase (read-only) | Admins |
-| `/tai search <query>` | Search Notion docs | All users |
+| `/tai create-issue <desc>` | Create Linear issues | Premium+ |
 | `@TAIBot <message>` | Conversational requests | All users |
+
+Premium+ users get access to Linear tools (create/search issues).
 
 ## Development
 
 ```bash
 # Install dependencies
-pnpm install
+npm install
 
 # Set up environment
 cp .env.example .env
 # Edit .env with your credentials
 
 # Register slash commands (once)
-pnpm register
+npm run register
 
 # Run in development
-pnpm dev
+npm run dev
 
 # Build for production
-pnpm build
+npm run build
 
 # Run production build
-pnpm start
+npm start
 ```
 
 ## Environment Variables
@@ -88,8 +91,9 @@ pnpm start
 | DISCORD_BOT_TOKEN | Bot token from Discord Developer Portal | Yes |
 | DISCORD_CLIENT_ID | Application ID | Yes |
 | DISCORD_GUILD_ID | Server ID for command registration | Yes |
-| TAI_API_URL | TAI backend URL | Yes |
-| TAI_DISCORD_SECRET | Shared secret for HMAC signing | Yes |
+| ANTHROPIC_API_KEY | Anthropic API key for Claude | Yes |
+| LINEAR_API_KEY | Linear API key | Yes |
+| LINEAR_TEAM_ID | Linear team UUID | Yes |
 | REDIS_URL | Redis URL for distributed rate limiting | No |
 
 ## Rate Limits
@@ -108,13 +112,12 @@ pnpm start
 
 ## Security
 
-- Bot token stored in environment variables only
-- HMAC-SHA256 signature validation for all API requests
+- API keys stored in environment variables only
 - Role-based access control via Discord roles
 - Rate limiting to prevent abuse
+- Free tier users cannot access Linear tools
 
 ## Related
 
-- TAI Main App: CodingFox-AI/tai-app
 - Linear: COD-379
-- Backend endpoint: /api/discord-agent (to be implemented in tai-app)
+- GitHub: Koplal/tai-discord-bot

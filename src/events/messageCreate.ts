@@ -1,7 +1,7 @@
 import { ChannelType, type Client, type Message } from 'discord.js';
 import type { BotConfig } from '../types.js';
 import { collectContext } from '../services/context-collector.js';
-import { sendAgentRequest } from '../services/agent-client.js';
+import { processAgentRequest } from '../services/agent.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
 import { checkPermissions } from '../middleware/permissions.js';
@@ -70,26 +70,14 @@ export async function handleMessageCreate(
     // Collect context from recent messages
     const context = await collectContext(message.channel, 10);
 
-    // Send request to TAI backend
-    const response = await sendAgentRequest(
+    // Process request with Claude agent directly
+    const response = await processAgentRequest(
       {
         content: prompt,
-        context: { messages: context },
-        user: {
-          discordId: message.author.id,
-          username: message.author.username,
-          roles: member?.roles.cache.map((r) => r.name) ?? [],
-        },
-        channel: {
-          id: message.channel.id,
-          name: getChannelName(message.channel),
-        },
-        guild: message.guild
-          ? {
-              id: message.guild.id,
-              name: message.guild.name,
-            }
-          : undefined,
+        context,
+        username: message.author.username,
+        channel: getChannelName(message.channel) ?? 'DM',
+        tier: permissionCheck.tier,
       },
       config
     );

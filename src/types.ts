@@ -96,8 +96,9 @@ export interface BotConfig {
   discordToken: string;
   discordClientId: string;
   discordGuildId: string;
-  taiApiUrl: string;
-  taiDiscordSecret: string;
+  anthropicApiKey: string;
+  linearApiKey: string;
+  linearTeamId: string;
   redisUrl?: string;
 }
 
@@ -109,8 +110,9 @@ export function loadConfig(): BotConfig {
     'DISCORD_BOT_TOKEN',
     'DISCORD_CLIENT_ID',
     'DISCORD_GUILD_ID',
-    'TAI_API_URL',
-    'TAI_DISCORD_SECRET',
+    'ANTHROPIC_API_KEY',
+    'LINEAR_API_KEY',
+    'LINEAR_TEAM_ID',
   ] as const;
 
   const missing = required.filter((key) => !process.env[key]);
@@ -122,8 +124,9 @@ export function loadConfig(): BotConfig {
     discordToken: process.env.DISCORD_BOT_TOKEN!,
     discordClientId: process.env.DISCORD_CLIENT_ID!,
     discordGuildId: process.env.DISCORD_GUILD_ID!,
-    taiApiUrl: process.env.TAI_API_URL!,
-    taiDiscordSecret: process.env.TAI_DISCORD_SECRET!,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY!,
+    linearApiKey: process.env.LINEAR_API_KEY!,
+    linearTeamId: process.env.LINEAR_TEAM_ID!,
     redisUrl: process.env.REDIS_URL,
   };
 }
