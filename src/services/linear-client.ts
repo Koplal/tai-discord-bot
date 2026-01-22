@@ -32,8 +32,29 @@ interface UpdateIssueInput {
   stateName?: string;
   priority?: 'urgent' | 'high' | 'normal' | 'low';
   assigneeId?: string;
+  labelIds?: string[];
+  projectId?: string;
   title?: string;
   description?: string;
+}
+
+interface LinearUser {
+  id: string;
+  name: string;
+  email: string;
+  displayName: string;
+}
+
+interface LinearLabel {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface LinearProject {
+  id: string;
+  name: string;
+  state: string;
 }
 
 interface ListIssuesInput {
@@ -372,6 +393,8 @@ export async function updateLinearIssue(
     if (input.priority) updateInput.priority = priorityToNumber(input.priority);
     if (input.stateId) updateInput.stateId = input.stateId;
     if (input.assigneeId) updateInput.assigneeId = input.assigneeId;
+    if (input.labelIds) updateInput.labelIds = input.labelIds;
+    if (input.projectId) updateInput.projectId = input.projectId;
 
     const result = await linearQuery<{
       issueUpdate: { success: boolean; issue: LinearIssue };
@@ -524,4 +547,186 @@ export function formatIssueDetailedForDiscord(issue: LinearIssue): string {
   lines.push(``, `🔗 ${issue.url}`);
 
   return lines.join('\n');
+}
+
+/**
+ * Get team members
+ */
+export async function getLinearUsers(
+  apiKey: string,
+  teamId: string
+): Promise<{ success: boolean; users?: LinearUser[]; error?: string }> {
+  try {
+    const query = `
+      query GetTeamMembers($teamId: String!) {
+        team(id: $teamId) {
+          members {
+            nodes {
+              id
+              name
+              email
+              displayName
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await linearQuery<{
+      team: { members: { nodes: LinearUser[] } };
+    }>(apiKey, query, { teamId });
+
+    return { success: true, users: result.team.members.nodes };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Get team labels
+ */
+export async function getLinearLabels(
+  apiKey: string,
+  teamId: string
+): Promise<{ success: boolean; labels?: LinearLabel[]; error?: string }> {
+  try {
+    const query = `
+      query GetTeamLabels($teamId: String!) {
+        team(id: $teamId) {
+          labels {
+            nodes {
+              id
+              name
+              color
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await linearQuery<{
+      team: { labels: { nodes: LinearLabel[] } };
+    }>(apiKey, query, { teamId });
+
+    return { success: true, labels: result.team.labels.nodes };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Get team projects
+ */
+export async function getLinearProjects(
+  apiKey: string,
+  teamId: string
+): Promise<{ success: boolean; projects?: LinearProject[]; error?: string }> {
+  try {
+    const query = `
+      query GetTeamProjects($filter: ProjectFilter) {
+        projects(filter: $filter, first: 50) {
+          nodes {
+            id
+            name
+            state
+          }
+        }
+      }
+    `;
+
+    const result = await linearQuery<{
+      projects: { nodes: LinearProject[] };
+    }>(apiKey, query, {
+      filter: {
+        accessibleTeams: { id: { eq: teamId } },
+      },
+    });
+
+    return { success: true, projects: result.projects.nodes };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Find user by name (case-insensitive partial match)
+ */
+export async function findLinearUser(
+  apiKey: string,
+  teamId: string,
+  nameQuery: string
+): Promise<{ success: boolean; user?: LinearUser; error?: string }> {
+  const result = await getLinearUsers(apiKey, teamId);
+  if (!result.success || !result.users) {
+    return { success: false, error: result.error ?? 'Failed to fetch users' };
+  }
+
+  const nameLower = nameQuery.toLowerCase();
+  const user = result.users.find(
+    (u) =>
+      u.name.toLowerCase().includes(nameLower) ||
+      u.displayName.toLowerCase().includes(nameLower) ||
+      u.email.toLowerCase().includes(nameLower)
+  );
+
+  if (user) {
+    return { success: true, user };
+  }
+
+  return { success: false, error: `User not found: ${nameQuery}` };
+}
+
+/**
+ * Find label by name (case-insensitive partial match)
+ */
+export async function findLinearLabel(
+  apiKey: string,
+  teamId: string,
+  nameQuery: string
+): Promise<{ success: boolean; label?: LinearLabel; error?: string }> {
+  const result = await getLinearLabels(apiKey, teamId);
+  if (!result.success || !result.labels) {
+    return { success: false, error: result.error ?? 'Failed to fetch labels' };
+  }
+
+  const nameLower = nameQuery.toLowerCase();
+  const label = result.labels.find((l) => l.name.toLowerCase().includes(nameLower));
+
+  if (label) {
+    return { success: true, label };
+  }
+
+  return { success: false, error: `Label not found: ${nameQuery}` };
+}
+
+/**
+ * Find project by name (case-insensitive partial match)
+ */
+export async function findLinearProject(
+  apiKey: string,
+  teamId: string,
+  nameQuery: string
+): Promise<{ success: boolean; project?: LinearProject; error?: string }> {
+  const result = await getLinearProjects(apiKey, teamId);
+  if (!result.success || !result.projects) {
+    return { success: false, error: result.error ?? 'Failed to fetch projects' };
+  }
+
+  const nameLower = nameQuery.toLowerCase();
+  const project = result.projects.find((p) => p.name.toLowerCase().includes(nameLower));
+
+  if (project) {
+    return { success: true, project };
+  }
+
+  return { success: false, error: `Project not found: ${nameQuery}` };
 }

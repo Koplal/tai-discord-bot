@@ -14,6 +14,12 @@ import {
   updateLinearIssue,
   addLinearComment,
   getLinearStatuses,
+  getLinearUsers,
+  getLinearLabels,
+  getLinearProjects,
+  findLinearUser,
+  findLinearLabel,
+  findLinearProject,
   formatIssueForDiscord,
   formatIssueDetailedForDiscord,
 } from './linear-client.js';
@@ -25,10 +31,21 @@ You have the following tools available:
 - search_linear_issues: Search for issues by keywords
 - get_linear_issue: Get details of a specific issue by identifier (e.g., COD-379)
 - list_linear_issues: List recent issues, optionally filtered by status
-- update_linear_issue: Update an issue's status, priority, title, or description
+- update_linear_issue: Update an issue's status, priority, assignee, labels, project, title, or description
 - add_linear_comment: Add a comment to an issue
+- list_linear_users: List team members who can be assigned to issues
+- list_linear_labels: List available labels
+- list_linear_projects: List available projects
 
-IMPORTANT: You CAN update issues. Use the update_linear_issue tool to change status (backlog, todo, in_progress, done, canceled), priority, title, or description.
+IMPORTANT: You CAN update issues. Use the update_linear_issue tool to change:
+- status: backlog, todo, in_progress, done, canceled
+- priority: urgent, high, normal, low
+- assignee: Use team member names like "Justin", "Rod"
+- labels: Array of label names like ["Bug", "Feature"]
+- project: Project name like "TAI v1"
+- title/description: Update text content
+
+When assigning users or setting labels/projects, use the list_ tools first if you need to see available options.
 
 Guidelines:
 - Be concise - Discord has a 2000 character limit
@@ -146,7 +163,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
     },
     {
       name: 'update_linear_issue',
-      description: 'Update an existing Linear issue. Can change status, priority, title, or description.',
+      description: 'Update an existing Linear issue. Can change status, priority, assignee, labels, project, title, or description.',
       input_schema: {
         type: 'object' as const,
         properties: {
@@ -163,6 +180,19 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
             type: 'string',
             enum: ['urgent', 'high', 'normal', 'low'],
             description: 'New priority for the issue',
+          },
+          assignee: {
+            type: 'string',
+            description: 'Name of the user to assign (e.g., "Justin", "Rod")',
+          },
+          labels: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Label names to set on the issue (e.g., ["Bug", "Priority"])',
+          },
+          project: {
+            type: 'string',
+            description: 'Project name to add the issue to (e.g., "TAI v1")',
           },
           title: {
             type: 'string',
@@ -192,6 +222,33 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
           },
         },
         required: ['identifier', 'comment'],
+      },
+    },
+    {
+      name: 'list_linear_users',
+      description: 'List team members who can be assigned to issues.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'list_linear_labels',
+      description: 'List available labels that can be applied to issues.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'list_linear_projects',
+      description: 'List projects that issues can be added to.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {},
+        required: [],
       },
     },
   ];
@@ -318,10 +375,13 @@ async function executeTool(
     }
 
     case 'update_linear_issue': {
-      const { identifier, status, priority, title, description } = toolInput as {
+      const { identifier, status, priority, assignee, labels, project, title, description } = toolInput as {
         identifier: string;
         status?: string;
         priority?: 'urgent' | 'high' | 'normal' | 'low';
+        assignee?: string;
+        labels?: string[];
+        project?: string;
         title?: string;
         description?: string;
       };
@@ -357,9 +417,57 @@ async function executeTool(
         }
       }
 
+      // Resolve assignee name to ID
+      let assigneeId: string | undefined;
+      if (assignee) {
+        const userResult = await findLinearUser(config.linearApiKey, config.linearTeamId, assignee);
+        if (userResult.success && userResult.user) {
+          assigneeId = userResult.user.id;
+        } else {
+          return {
+            result: `❌ User not found: ${assignee}`,
+            success: false,
+          };
+        }
+      }
+
+      // Resolve label names to IDs
+      let labelIds: string[] | undefined;
+      if (labels && labels.length > 0) {
+        labelIds = [];
+        for (const labelName of labels) {
+          const labelResult = await findLinearLabel(config.linearApiKey, config.linearTeamId, labelName);
+          if (labelResult.success && labelResult.label) {
+            labelIds.push(labelResult.label.id);
+          } else {
+            return {
+              result: `❌ Label not found: ${labelName}`,
+              success: false,
+            };
+          }
+        }
+      }
+
+      // Resolve project name to ID
+      let projectId: string | undefined;
+      if (project) {
+        const projectResult = await findLinearProject(config.linearApiKey, config.linearTeamId, project);
+        if (projectResult.success && projectResult.project) {
+          projectId = projectResult.project.id;
+        } else {
+          return {
+            result: `❌ Project not found: ${project}`,
+            success: false,
+          };
+        }
+      }
+
       const result = await updateLinearIssue(config.linearApiKey, issueResult.issue.id, {
         stateId,
         priority,
+        assigneeId,
+        labelIds,
+        projectId,
         title,
         description,
       });
@@ -368,6 +476,9 @@ async function executeTool(
         const changes: string[] = [];
         if (status) changes.push(`status → ${status}`);
         if (priority) changes.push(`priority → ${priority}`);
+        if (assignee) changes.push(`assignee → ${assignee}`);
+        if (labels) changes.push(`labels → ${labels.join(', ')}`);
+        if (project) changes.push(`project → ${project}`);
         if (title) changes.push(`title updated`);
         if (description) changes.push(`description updated`);
 
@@ -409,6 +520,82 @@ async function executeTool(
 
       return {
         result: `❌ Failed to add comment: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'list_linear_users': {
+      const result = await getLinearUsers(config.linearApiKey, config.linearTeamId);
+
+      if (result.success && result.users) {
+        if (result.users.length === 0) {
+          return {
+            result: 'No team members found',
+            success: true,
+          };
+        }
+
+        const userList = result.users
+          .map((u) => `• **${u.name}** (${u.displayName || u.email})`)
+          .join('\n');
+        return {
+          result: `**Team Members** (${result.users.length}):\n\n${userList}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to list users: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'list_linear_labels': {
+      const result = await getLinearLabels(config.linearApiKey, config.linearTeamId);
+
+      if (result.success && result.labels) {
+        if (result.labels.length === 0) {
+          return {
+            result: 'No labels found',
+            success: true,
+          };
+        }
+
+        const labelList = result.labels.map((l) => `• **${l.name}**`).join('\n');
+        return {
+          result: `**Available Labels** (${result.labels.length}):\n\n${labelList}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to list labels: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'list_linear_projects': {
+      const result = await getLinearProjects(config.linearApiKey, config.linearTeamId);
+
+      if (result.success && result.projects) {
+        if (result.projects.length === 0) {
+          return {
+            result: 'No projects found',
+            success: true,
+          };
+        }
+
+        const projectList = result.projects
+          .map((p) => `• **${p.name}** (${p.state})`)
+          .join('\n');
+        return {
+          result: `**Projects** (${result.projects.length}):\n\n${projectList}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to list projects: ${result.error ?? 'Unknown error'}`,
         success: false,
       };
     }
