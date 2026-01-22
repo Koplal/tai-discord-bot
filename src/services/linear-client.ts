@@ -232,28 +232,42 @@ export async function getLinearIssue(
   identifier: string
 ): Promise<{ success: boolean; issue?: LinearIssue; error?: string }> {
   try {
+    // Use issues query with filter to find by identifier (e.g., "COD-379")
+    // The issue(id:) query expects a UUID, not an identifier
     const query = `
-      query GetIssue($id: String!) {
-        issue(id: $id) {
-          id
-          identifier
-          title
-          description
-          url
-          state { name }
-          priority
-          assignee { name email }
-          labels { nodes { name } }
-          createdAt
-          updatedAt
+      query GetIssueByIdentifier($filter: IssueFilter!) {
+        issues(filter: $filter, first: 1) {
+          nodes {
+            id
+            identifier
+            title
+            description
+            url
+            state { name }
+            priority
+            assignee { name email }
+            labels { nodes { name } }
+            createdAt
+            updatedAt
+          }
         }
       }
     `;
 
-    const result = await linearQuery<{ issue: LinearIssue }>(apiKey, query, { id: identifier });
+    // Parse identifier to extract team key and number (e.g., "COD-379" -> number: 379)
+    const match = identifier.match(/^([A-Z]+)-(\d+)$/i);
+    if (!match) {
+      return { success: false, error: `Invalid identifier format: ${identifier}` };
+    }
 
-    if (result.issue) {
-      return { success: true, issue: result.issue };
+    const issueNumber = parseInt(match[2], 10);
+
+    const result = await linearQuery<{ issues: { nodes: LinearIssue[] } }>(apiKey, query, {
+      filter: { number: { eq: issueNumber } },
+    });
+
+    if (result.issues.nodes.length > 0) {
+      return { success: true, issue: result.issues.nodes[0] };
     }
 
     return { success: false, error: 'Issue not found' };
