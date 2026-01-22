@@ -87,6 +87,7 @@ Issues have these distinct field types (not interchangeable):
 | Assignee | User | Team member responsible |
 | Labels | Tags | Type (bug/feature), status (blocked) |
 | Project | Container | Groups related issues |
+| Milestone | Roadmap marker | Target releases/goals |
 | Cycle | Sprint | 2-week work periods (current/upcoming) |
 | Estimate | Points | T-shirt size (XS/S/M/L/XL) |
 

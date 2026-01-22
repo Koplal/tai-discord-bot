@@ -10,10 +10,13 @@ All notable changes to the TAI Discord Bot.
 - Section 9 (TAI Bot Linear Tools) in linear-usage-guide.md
 - TAI Bot anti-patterns documentation
 - Linear tools reference table in CLAUDE.md
+- Linear Issue Fields table documenting all field types
+- Milestone field type documentation
 
 ### Changed
 - Estimates now use T-shirt sizes: XS=1, S=2, M=3, L=5, XL=8
 - Updated system prompt with cycle tool and estimate syntax
+- Clarified distinction between cycles (sprints) and labels (tags)
 
 ## [1.0.0] - 2026-01-22
 

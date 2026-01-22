@@ -954,6 +954,7 @@ Issues have distinct field categories (not interchangeable):
 | **Assignee** | Team member | Justin, Landon, Haley |
 | **Labels** | Tags/categories | Bug, Feature, Blocked |
 | **Project** | Issue container | TAI v1 |
+| **Milestone** | Roadmap marker | Beta Launch, v1.0 Release |
 | **Cycle** | Sprint period | Cycle 3 (Jan 5-19) |
 | **Estimate** | Effort size | XS, S, M, L, XL |
 
