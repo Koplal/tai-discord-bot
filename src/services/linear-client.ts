@@ -229,6 +229,7 @@ export async function searchLinearIssues(
  */
 export async function getLinearIssue(
   apiKey: string,
+  teamId: string,
   identifier: string
 ): Promise<{ success: boolean; issue?: LinearIssue; error?: string }> {
   try {
@@ -263,7 +264,10 @@ export async function getLinearIssue(
     const issueNumber = parseInt(match[2], 10);
 
     const result = await linearQuery<{ issues: { nodes: LinearIssue[] } }>(apiKey, query, {
-      filter: { number: { eq: issueNumber } },
+      filter: {
+        team: { id: { eq: teamId } },
+        number: { eq: issueNumber },
+      },
     });
 
     if (result.issues.nodes.length > 0) {

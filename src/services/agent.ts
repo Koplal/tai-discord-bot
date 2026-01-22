@@ -269,7 +269,7 @@ async function executeTool(
     case 'get_linear_issue': {
       const { identifier } = toolInput as { identifier: string };
 
-      const result = await getLinearIssue(config.linearApiKey, identifier);
+      const result = await getLinearIssue(config.linearApiKey, config.linearTeamId, identifier);
 
       if (result.success && result.issue) {
         return {
@@ -327,7 +327,7 @@ async function executeTool(
       };
 
       // First get the issue to get its ID
-      const issueResult = await getLinearIssue(config.linearApiKey, identifier);
+      const issueResult = await getLinearIssue(config.linearApiKey, config.linearTeamId, identifier);
       if (!issueResult.success || !issueResult.issue) {
         return {
           result: `❌ Issue not found: ${identifier}`,
@@ -390,7 +390,7 @@ async function executeTool(
       };
 
       // First get the issue to get its ID
-      const issueResult = await getLinearIssue(config.linearApiKey, identifier);
+      const issueResult = await getLinearIssue(config.linearApiKey, config.linearTeamId, identifier);
       if (!issueResult.success || !issueResult.issue) {
         return {
           result: `❌ Issue not found: ${identifier}`,
