@@ -70,6 +70,16 @@ export function summarizeContext(messages: ContextMessage[], maxTokens: number =
 }
 
 /**
+ * Hydrate a partial message if needed (partials have null content/author)
+ */
+async function hydrateIfPartial(msg: Message): Promise<Message> {
+  if (msg.partial) {
+    return msg.fetch();
+  }
+  return msg;
+}
+
+/**
  * Collect context from a reply chain, including the referenced message
  */
 export async function collectReplyContext(
@@ -77,15 +87,22 @@ export async function collectReplyContext(
   limit: number = 10
 ): Promise<ContextMessage[]> {
   const replyChain: ContextMessage[] = [];
+  const replyMessageIds = new Set<string>();
 
   try {
     // Walk up the reply chain (max 5 levels)
     let current: Message | null = message;
     let depth = 0;
     while (current?.reference && depth < 5) {
+      const messageId = current.reference.messageId;
+      if (!messageId) break;
+
       try {
-        const referenced = await current.channel.messages.fetch(current.reference.messageId!);
+        const referenced = await hydrateIfPartial(
+          await current.channel.messages.fetch(messageId)
+        );
         replyChain.unshift(messageToContext(referenced));
+        replyMessageIds.add(referenced.id);
         current = referenced;
         depth++;
       } catch {
@@ -99,9 +116,12 @@ export async function collectReplyContext(
   // Also get recent channel context
   const channelContext = await collectContext(message.channel, limit);
 
-  // Merge: reply chain first (deduped), then channel context
-  const seenTimestamps = new Set(replyChain.map((m) => m.timestamp));
-  const deduped = channelContext.filter((m) => !seenTimestamps.has(m.timestamp));
+  // Merge: reply chain first, then channel context (deduped by message ID via timestamp+author)
+  const deduped = channelContext.filter((m) => {
+    // Use content+author+timestamp as composite key since ContextMessage lacks ID
+    const key = `${m.author}:${m.timestamp}`;
+    return !replyChain.some((r) => `${r.author}:${r.timestamp}` === key);
+  });
 
   return [...replyChain, ...deduped];
 }

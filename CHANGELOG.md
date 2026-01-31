@@ -5,6 +5,12 @@ All notable changes to the TAI Discord Bot.
 ## [Unreleased]
 
 ### Added
+- `list_issue_comments` tool to read Linear issue comment threads (COD-503)
+- Recent comments shown in `get_linear_issue` detailed responses
+- Discord thread and reply chain context awareness
+- `Partials.Message` and `Partials.ThreadMember` for uncached thread/reply support
+- Reply chain walking (up to 5 levels) with partial message hydration
+- Thread-aware context collection for `/tai` slash commands
 - `list_linear_cycles` tool to query current and upcoming sprint cycles
 - T-shirt size estimates (XS/S/M/L/XL) replacing Fibonacci points
 - Section 9 (TAI Bot Linear Tools) in linear-usage-guide.md

@@ -69,8 +69,7 @@ export async function handleMessageCreate(
   try {
     // Collect context: use thread context for threads, reply context for replies, otherwise channel context
     let context;
-    const isThread = 'parent' in message.channel && message.channel.isThread();
-    if (isThread) {
+    if (message.channel.isThread()) {
       context = await collectThreadContext(message.channel, 10);
     } else if (message.reference) {
       context = await collectReplyContext(message, 10);

@@ -1,7 +1,7 @@
 import { ChannelType, type Interaction, type TextBasedChannel } from 'discord.js';
 import type { BotConfig } from '../types.js';
 import { parseTaiCommand, type TaiCommandInteraction } from '../commands/tai.js';
-import { collectContext } from '../services/context-collector.js';
+import { collectContext, collectThreadContext } from '../services/context-collector.js';
 import { processAgentRequest } from '../services/agent.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
@@ -70,10 +70,15 @@ export async function handleInteractionCreate(
   await interaction.deferReply();
 
   try {
-    // Collect context from channel (if available)
-    const context = interaction.channel
-      ? await collectContext(interaction.channel, 10)
-      : [];
+    // Collect context: use thread context for threads, otherwise channel context
+    let context;
+    if (interaction.channel?.isThread()) {
+      context = await collectThreadContext(interaction.channel, 10);
+    } else if (interaction.channel) {
+      context = await collectContext(interaction.channel, 10);
+    } else {
+      context = [];
+    }
 
     // Build enhanced prompt with options
     let enhancedPrompt = prompt;

@@ -309,6 +309,13 @@ export async function getLinearIssue(
             priority
             assignee { name email }
             labels { nodes { id name } }
+            comments(first: 5) {
+              nodes {
+                body
+                createdAt
+                user { name }
+              }
+            }
             createdAt
             updatedAt
           }
@@ -324,7 +331,7 @@ export async function getLinearIssue(
 
     const issueNumber = parseInt(match[2], 10);
 
-    const result = await linearQuery<{ issues: { nodes: LinearIssue[] } }>(apiKey, query, {
+    const result = await linearQuery<{ issues: { nodes: (LinearIssue & { comments?: { nodes: Array<{ body: string; createdAt: string; user: { name: string } }> } })[] } }>(apiKey, query, {
       filter: {
         team: { id: { eq: teamId } },
         number: { eq: issueNumber },
@@ -552,7 +559,7 @@ export function formatIssueForDiscord(issue: LinearIssue): string {
 /**
  * Format an issue with full details for Discord display
  */
-export function formatIssueDetailedForDiscord(issue: LinearIssue): string {
+export function formatIssueDetailedForDiscord(issue: LinearIssue & { comments?: { nodes: Array<{ body: string; createdAt: string; user: { name: string } }> } }): string {
   const priorityEmoji: Record<number, string> = {
     1: '🔴 Urgent',
     2: '🟠 High',
@@ -582,6 +589,15 @@ export function formatIssueDetailedForDiscord(issue: LinearIssue): string {
       ? issue.description.substring(0, 500) + '...'
       : issue.description;
     lines.push(``, `📝 **Description:**`, truncatedDesc);
+  }
+
+  if (issue.comments?.nodes && issue.comments.nodes.length > 0) {
+    lines.push(``, `💬 **Recent Comments** (${issue.comments.nodes.length}):`);
+    for (const c of issue.comments.nodes.slice(0, 5)) {
+      const date = new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const body = c.body.length > 150 ? c.body.substring(0, 150) + '...' : c.body;
+      lines.push(`> **${c.user.name}** (${date}): ${body}`);
+    }
   }
 
   lines.push(``, `🔗 ${issue.url}`);
