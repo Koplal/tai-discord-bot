@@ -33,7 +33,7 @@ const SYSTEM_PROMPT = `You are TAI Bot, an AI assistant for the Transformational
 You have the following tools available:
 - create_linear_issue: Create new Linear issues
 - search_linear_issues: Search for issues by keywords
-- get_linear_issue: Get details of a specific issue by identifier (e.g., COD-379)
+- get_linear_issue: Get details of a specific issue by identifier (e.g., COD-379), includes recent comments
 - list_linear_issues: List recent issues, optionally filtered by status
 - update_linear_issue: Update an issue's status, priority, assignee, labels, project, title, or description
 - add_linear_comment: Add a comment to an issue

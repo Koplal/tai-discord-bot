@@ -67,7 +67,7 @@ Premium+ users get access to Linear tools (create/search issues, cycles).
 |------|-------------|
 | `create_linear_issue` | Create new issues |
 | `search_linear_issues` | Search by keywords |
-| `get_linear_issue` | Get issue details (COD-XXX) |
+| `get_linear_issue` | Get issue details with recent comments (COD-XXX) |
 | `list_linear_issues` | List recent issues |
 | `update_linear_issue` | Update status/priority/assignee/labels/cycle |
 | `add_linear_comment` | Add comments |

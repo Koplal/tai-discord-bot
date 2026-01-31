@@ -602,7 +602,11 @@ export function formatIssueDetailedForDiscord(issue: LinearIssue & { comments?: 
 
   lines.push(``, `🔗 ${issue.url}`);
 
-  return lines.join('\n');
+  const output = lines.join('\n');
+  if (output.length > 1900) {
+    return output.substring(0, 1800) + '\n\n*...truncated — view full details in Linear*';
+  }
+  return output;
 }
 
 /**

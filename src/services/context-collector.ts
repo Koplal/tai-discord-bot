@@ -87,7 +87,6 @@ export async function collectReplyContext(
   limit: number = 10
 ): Promise<ContextMessage[]> {
   const replyChain: ContextMessage[] = [];
-  const replyMessageIds = new Set<string>();
 
   try {
     // Walk up the reply chain (max 5 levels)
@@ -102,7 +101,6 @@ export async function collectReplyContext(
           await current.channel.messages.fetch(messageId)
         );
         replyChain.unshift(messageToContext(referenced));
-        replyMessageIds.add(referenced.id);
         current = referenced;
         depth++;
       } catch {
