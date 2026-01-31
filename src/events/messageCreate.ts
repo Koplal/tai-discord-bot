@@ -68,7 +68,7 @@ export async function handleMessageCreate(
 
   try {
     // Collect context: use thread context for threads, reply context for replies, otherwise channel context
-    let context;
+    let context: import('../types.js').ContextMessage[];
     if (message.channel.isThread()) {
       context = await collectThreadContext(message.channel, 10);
     } else if (message.reference) {

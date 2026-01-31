@@ -71,7 +71,7 @@ export async function handleInteractionCreate(
 
   try {
     // Collect context: use thread context for threads, otherwise channel context
-    let context;
+    let context: import('../types.js').ContextMessage[];
     if (interaction.channel?.isThread()) {
       context = await collectThreadContext(interaction.channel, 10);
     } else if (interaction.channel) {
