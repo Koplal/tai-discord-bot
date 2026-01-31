@@ -74,6 +74,7 @@ Premium+ users get access to Linear tools (create/search issues, cycles).
 | `list_linear_users` | List team members |
 | `list_linear_labels` | List available labels |
 | `list_linear_projects` | List projects |
+| `list_issue_comments` | Read comments/discussion on issues |
 | `list_linear_cycles` | List current/upcoming sprints |
 
 ## Linear Issue Fields

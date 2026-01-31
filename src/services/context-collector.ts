@@ -68,3 +68,40 @@ export function summarizeContext(messages: ContextMessage[], maxTokens: number =
   // Keep most recent messages
   return messages.slice(-maxMessages);
 }
+
+/**
+ * Collect context from a reply chain, including the referenced message
+ */
+export async function collectReplyContext(
+  message: Message,
+  limit: number = 10
+): Promise<ContextMessage[]> {
+  const replyChain: ContextMessage[] = [];
+
+  try {
+    // Walk up the reply chain (max 5 levels)
+    let current: Message | null = message;
+    let depth = 0;
+    while (current?.reference && depth < 5) {
+      try {
+        const referenced = await current.channel.messages.fetch(current.reference.messageId!);
+        replyChain.unshift(messageToContext(referenced));
+        current = referenced;
+        depth++;
+      } catch {
+        break;
+      }
+    }
+  } catch {
+    // Fall through to channel context
+  }
+
+  // Also get recent channel context
+  const channelContext = await collectContext(message.channel, limit);
+
+  // Merge: reply chain first (deduped), then channel context
+  const seenTimestamps = new Set(replyChain.map((m) => m.timestamp));
+  const deduped = channelContext.filter((m) => !seenTimestamps.has(m.timestamp));
+
+  return [...replyChain, ...deduped];
+}

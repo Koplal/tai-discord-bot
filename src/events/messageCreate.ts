@@ -1,6 +1,6 @@
 import { ChannelType, type Client, type Message } from 'discord.js';
 import type { BotConfig } from '../types.js';
-import { collectContext } from '../services/context-collector.js';
+import { collectContext, collectThreadContext, collectReplyContext } from '../services/context-collector.js';
 import { processAgentRequest } from '../services/agent.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
@@ -67,8 +67,16 @@ export async function handleMessageCreate(
   await message.react('🤔');
 
   try {
-    // Collect context from recent messages
-    const context = await collectContext(message.channel, 10);
+    // Collect context: use thread context for threads, reply context for replies, otherwise channel context
+    let context;
+    const isThread = 'parent' in message.channel && message.channel.isThread();
+    if (isThread) {
+      context = await collectThreadContext(message.channel, 10);
+    } else if (message.reference) {
+      context = await collectReplyContext(message, 10);
+    } else {
+      context = await collectContext(message.channel, 10);
+    }
 
     // Process request with Claude agent directly
     const response = await processAgentRequest(

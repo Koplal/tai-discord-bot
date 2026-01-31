@@ -916,6 +916,79 @@ export async function getLinearCycles(
 }
 
 /**
+ * List comments on a Linear issue
+ */
+export async function listIssueComments(
+  apiKey: string,
+  teamId: string,
+  identifier: string,
+  limit: number = 25
+): Promise<{ success: boolean; comments?: Array<{ id: string; body: string; createdAt: string; author: string; isReply: boolean }>; error?: string }> {
+  try {
+    // First get the issue ID
+    const issueResult = await getLinearIssue(apiKey, teamId, identifier);
+    if (!issueResult.success || !issueResult.issue) {
+      return { success: false, error: issueResult.error ?? 'Issue not found' };
+    }
+
+    const query = `
+      query GetIssueComments($id: String!, $first: Int) {
+        issue(id: $id) {
+          comments(first: $first) {
+            nodes {
+              id
+              body
+              createdAt
+              user { name }
+              parent { id }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await linearQuery<{
+      issue: { comments: { nodes: Array<{ id: string; body: string; createdAt: string; user: { name: string }; parent?: { id: string } | null }> } };
+    }>(apiKey, query, { id: issueResult.issue.id, first: limit });
+
+    const comments = result.issue.comments.nodes.map((c) => ({
+      id: c.id,
+      body: c.body,
+      createdAt: c.createdAt,
+      author: c.user.name,
+      isReply: !!c.parent,
+    }));
+
+    return { success: true, comments };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Format comments for Discord display
+ */
+export function formatCommentsForDiscord(
+  comments: Array<{ body: string; createdAt: string; author: string; isReply: boolean }>
+): string {
+  if (comments.length === 0) {
+    return 'No comments on this issue.';
+  }
+
+  return comments
+    .map((c) => {
+      const date = new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const prefix = c.isReply ? '  ↳ ' : '';
+      const truncatedBody = c.body.length > 300 ? c.body.substring(0, 300) + '...' : c.body;
+      return `${prefix}**${c.author}** (${date}):\n${prefix}${truncatedBody}`;
+    })
+    .join('\n\n');
+}
+
+/**
  * Format a cycle for Discord display
  */
 export function formatCycleForDiscord(cycle: LinearCycle): string {

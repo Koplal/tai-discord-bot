@@ -24,6 +24,8 @@ import {
   formatIssueForDiscord,
   formatIssueDetailedForDiscord,
   formatCycleForDiscord,
+  listIssueComments,
+  formatCommentsForDiscord,
 } from './linear-client.js';
 
 const SYSTEM_PROMPT = `You are TAI Bot, an AI assistant for the Transformational AI team on Discord.
@@ -35,6 +37,7 @@ You have the following tools available:
 - list_linear_issues: List recent issues, optionally filtered by status
 - update_linear_issue: Update an issue's status, priority, assignee, labels, project, title, or description
 - add_linear_comment: Add a comment to an issue
+- list_issue_comments: Read comments/discussion on an issue
 - list_linear_users: List team members who can be assigned to issues
 - list_linear_labels: List available labels
 - list_linear_projects: List available projects
@@ -235,6 +238,24 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
           },
         },
         required: ['identifier', 'comment'],
+      },
+    },
+    {
+      name: 'list_issue_comments',
+      description: 'List comments and discussion on a Linear issue. Use to read what people have discussed on a ticket.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          identifier: {
+            type: 'string',
+            description: 'Issue identifier like COD-379',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum comments to return (default 25)',
+          },
+        },
+        required: ['identifier'],
       },
     },
     {
@@ -564,6 +585,34 @@ async function executeTool(
 
       return {
         result: `❌ Failed to add comment: ${result.error ?? 'Unknown error'}`,
+        success: false,
+      };
+    }
+
+    case 'list_issue_comments': {
+      const { identifier, limit } = toolInput as { identifier: string; limit?: number };
+
+      const result = await listIssueComments(
+        config.linearApiKey,
+        config.linearTeamId,
+        identifier,
+        Math.min(limit ?? 25, 50)
+      );
+
+      if (result.success && result.comments) {
+        if (result.comments.length === 0) {
+          return { result: `No comments on **${identifier}**`, success: true };
+        }
+
+        const formatted = formatCommentsForDiscord(result.comments);
+        return {
+          result: `**Comments on ${identifier}** (${result.comments.length}):\n\n${formatted}`,
+          success: true,
+        };
+      }
+
+      return {
+        result: `❌ Failed to get comments: ${result.error ?? 'Unknown error'}`,
         success: false,
       };
     }

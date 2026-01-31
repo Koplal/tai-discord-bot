@@ -15,7 +15,11 @@ const client = new Client({
     GatewayIntentBits.MessageContent, // Privileged intent for @mentions
     GatewayIntentBits.DirectMessages,
   ],
-  partials: [Partials.Channel], // Required for DM support
+  partials: [
+    Partials.Channel,  // Required for DM support
+    Partials.Message,  // Receive uncached messages in threads/replies
+    Partials.ThreadMember, // Thread membership events
+  ],
 });
 
 // Register event handlers
