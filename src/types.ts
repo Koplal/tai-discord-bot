@@ -152,12 +152,30 @@ export function getUserTier(member: GuildMember | null, roleTiers: Map<string, R
 }
 
 /**
- * Extract relevant info from a Discord message
+ * Extract relevant info from a Discord message.
+ * Captures both regular content and embed content (many bots use embeds).
  */
 export function messageToContext(message: Message): ContextMessage {
+  const parts: string[] = [];
+
+  // Regular message content
+  if (message.content?.trim()) {
+    parts.push(message.content.trim());
+  }
+
+  // Extract text from embeds (many bots send responses as embeds)
+  for (const embed of message.embeds) {
+    if (embed.title) parts.push(embed.title);
+    if (embed.description) parts.push(embed.description);
+    for (const field of embed.fields) {
+      parts.push(`${field.name}: ${field.value}`);
+    }
+    if (embed.footer?.text) parts.push(embed.footer.text);
+  }
+
   return {
     role: message.author.bot ? 'assistant' : 'user',
-    content: message.content,
+    content: parts.join('\n') || '',
     author: message.author.username,
     timestamp: message.createdAt.toISOString(),
   };

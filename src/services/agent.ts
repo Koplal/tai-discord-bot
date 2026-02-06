@@ -759,13 +759,15 @@ export async function processAgentRequest(
 
   // Add context (last 10 messages), filtering out empty content
   // (Anthropic API requires all messages to have non-empty content)
+  // Include author names so Claude can distinguish between different users/bots
   for (const ctx of request.context.slice(-10)) {
     if (!ctx.content || ctx.content.trim() === '') {
       continue;
     }
+    const prefix = ctx.author ? `[${ctx.author}]: ` : '';
     messages.push({
       role: ctx.role === 'user' ? 'user' : 'assistant',
-      content: ctx.content,
+      content: `${prefix}${ctx.content}`,
     });
   }
 
