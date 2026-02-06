@@ -24,8 +24,8 @@ export async function handleMessageCreate(
   client: Client,
   config: BotConfig
 ): Promise<void> {
-  // Ignore messages from bots (including self)
-  if (message.author.bot) return;
+  // Ignore own messages to prevent infinite loops, but allow other bots
+  if (message.author.id === client.user!.id) return;
 
   // Check if the bot was mentioned
   if (!message.mentions.has(client.user!.id)) return;
