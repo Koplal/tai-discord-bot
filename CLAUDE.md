@@ -11,7 +11,7 @@ Linear Ticket: COD-379
 | Runtime | Node.js 22+ |
 | Framework | discord.js v14 |
 | Language | TypeScript |
-| Hosting | Railway ($5-10/month) |
+| Hosting | Google Cloud Free Tier (e2-micro VM) |
 | AI | Anthropic Claude (claude-sonnet-4-20250514) |
 | Project Management | Linear GraphQL API |
 
@@ -147,11 +147,17 @@ npm start
 | Premium | 60 | 500,000 |
 | Admin | 1000 | Unlimited |
 
-## Deployment (Railway)
+## Deployment (Google Cloud)
 
-1. Connect GitHub repo to Railway
-2. Set environment variables in Railway dashboard
-3. Deploy automatically on push to main
+Runs on Google Cloud Free Tier e2-micro VM with systemd service and GitHub Actions auto-deploy.
+
+- VM: e2-micro (2 vCPU, 1 GB RAM) in us-central1, Ubuntu 22.04
+- Service: systemd unit at `/etc/systemd/system/tai-discord-bot.service`
+- App dir: `/opt/tai-discord-bot`
+- Auto-deploy: GitHub Actions on push to `main` via SSH
+- Logs: `journalctl -u tai-discord-bot -f`
+
+See `deploy/README.md` for full setup instructions.
 
 ## Security
 

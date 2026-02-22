@@ -1,0 +1,20 @@
+[Unit]
+Description=TAI Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=discordbot
+Group=discordbot
+WorkingDirectory=/opt/tai-discord-bot
+EnvironmentFile=/opt/tai-discord-bot/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tai-discord-bot
+
+[Install]
+WantedBy=multi-user.target

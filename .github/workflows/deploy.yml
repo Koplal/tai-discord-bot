@@ -1,0 +1,23 @@
+name: Deploy to Google Cloud
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.GCP_HOST }}
+          username: ${{ secrets.GCP_USER }}
+          key: ${{ secrets.GCP_SSH_KEY }}
+          script: |
+            cd /opt/tai-discord-bot
+            sudo -u discordbot git pull
+            sudo -u discordbot npm ci --omit=dev
+            sudo -u discordbot npm run build
+            sudo systemctl restart tai-discord-bot
