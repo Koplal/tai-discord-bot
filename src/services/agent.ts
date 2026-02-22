@@ -320,6 +320,22 @@ async function executeTool(
   toolInput: Record<string, unknown>,
   config: BotConfig
 ): Promise<{ result: string; success: boolean }> {
+  console.log(`[Tool] Executing: ${toolName}`, JSON.stringify(toolInput));
+  try {
+  const toolResult = await executeToolInner(toolName, toolInput, config);
+  console.log(`[Tool] ${toolName} result: success=${toolResult.success}`, toolResult.success ? '' : toolResult.result);
+  return toolResult;
+  } catch (error) {
+    console.error(`[Tool] ${toolName} error:`, error);
+    return { result: `❌ Tool error: ${error instanceof Error ? error.message : 'Unknown error'}`, success: false };
+  }
+}
+
+async function executeToolInner(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  config: BotConfig
+): Promise<{ result: string; success: boolean }> {
   switch (toolName) {
     case 'create_linear_issue': {
       const { title, description, priority } = toolInput as {
