@@ -31,8 +31,9 @@ else
 fi
 
 echo "==> Installing dependencies and building..."
-npm ci --omit=dev
+npm ci
 npm run build
+npm prune --omit=dev
 
 echo "==> Setting ownership..."
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$APP_DIR"

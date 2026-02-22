@@ -18,6 +18,7 @@ jobs:
           script: |
             cd /opt/tai-discord-bot
             sudo -u discordbot git pull
-            sudo -u discordbot npm ci --omit=dev
+            sudo -u discordbot npm ci
             sudo -u discordbot npm run build
+            sudo -u discordbot npm prune --omit=dev
             sudo systemctl restart tai-discord-bot
