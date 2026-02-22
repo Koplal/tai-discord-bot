@@ -199,14 +199,17 @@ export async function createLinearIssue(
       }
     `;
 
-    const variables = {
-      input: {
-        teamId,
-        title: input.title,
-        description: input.description,
-        priority: priorityToNumber(input.priority),
-      },
+    const issueInput: Record<string, unknown> = {
+      teamId,
+      title: input.title,
+      description: input.description,
     };
+
+    if (input.priority) {
+      issueInput.priority = priorityToNumber(input.priority);
+    }
+
+    const variables = { input: issueInput };
 
     const result = await linearQuery<{
       issueCreate: { success: boolean; issue: LinearIssue };
