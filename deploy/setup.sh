@@ -32,7 +32,7 @@ fi
 
 echo "==> Installing dependencies and building..."
 npm ci
-npm run build
+./node_modules/.bin/tsc
 npm prune --omit=dev
 
 echo "==> Setting ownership..."
