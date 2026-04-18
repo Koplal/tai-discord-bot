@@ -6,6 +6,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import type { BotConfig, ContextMessage, UserTier, AgentResponse, ImageAttachment } from '../types.js';
+import { scrubDiscordCdnUrls } from '../lib/log-scrub.js';
+import { isVisionDisabled } from '../lib/env-flags.js';
 import {
   createLinearIssue,
   searchLinearIssues,
@@ -27,6 +29,8 @@ import {
   listIssueComments,
   formatCommentsForDiscord,
 } from './linear-client.js';
+
+const MODEL_ID = 'claude-sonnet-4-20250514';
 
 const SYSTEM_PROMPT = `You are TAI Bot, an AI assistant for the Transformational AI team on Discord.
 
@@ -93,6 +97,184 @@ export interface AgentRequest {
 }
 
 export type { AgentResponse };
+
+// ---------------------------------------------------------------------------
+// Minimal injectable client interface (for testing without the real SDK)
+// ---------------------------------------------------------------------------
+
+interface AnthropicClientLike {
+  messages: {
+    create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// collapseConsecutiveRoles
+//
+// Merges adjacent MessageParam entries that share the same role.
+// String content is joined with '\n'; array content is concatenated.
+// Mixed string + array is promoted to array.
+//
+// Used ONLY on the initial-context slice — never on tool-loop messages.
+// ---------------------------------------------------------------------------
+
+export function collapseConsecutiveRoles(
+  messages: Anthropic.MessageParam[]
+): Anthropic.MessageParam[] {
+  const result: Anthropic.MessageParam[] = [];
+
+  for (const msg of messages) {
+    const last = result[result.length - 1];
+    if (!last || last.role !== msg.role) {
+      result.push({ role: msg.role, content: msg.content });
+      continue;
+    }
+
+    // Merge content
+    const a = last.content;
+    const b = msg.content;
+
+    if (typeof a === 'string' && typeof b === 'string') {
+      last.content = `${a}\n${b}`;
+    } else if (Array.isArray(a) && Array.isArray(b)) {
+      last.content = [...a, ...b] as Anthropic.ContentBlockParam[];
+    } else {
+      // Mixed: promote to array
+      const aArr: Anthropic.ContentBlockParam[] =
+        typeof a === 'string'
+          ? [{ type: 'text', text: a }]
+          : (a as Anthropic.ContentBlockParam[]);
+      const bArr: Anthropic.ContentBlockParam[] =
+        typeof b === 'string'
+          ? [{ type: 'text', text: b }]
+          : (b as Anthropic.ContentBlockParam[]);
+      last.content = [...aArr, ...bArr];
+    }
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// filterImageBlocks
+//
+// Removes all type:"image" blocks from an array of ContentBlockParam.
+// If the resulting array is empty, returns a replacement text block.
+// ---------------------------------------------------------------------------
+
+function filterImageBlocks(
+  blocks: Anthropic.ContentBlockParam[]
+): Anthropic.ContentBlockParam[] {
+  const filtered = blocks.filter((b) => b.type !== 'image');
+  if (filtered.length === 0) {
+    return [{ type: 'text', text: '(image removed — source unavailable)' }];
+  }
+  return filtered;
+}
+
+// ---------------------------------------------------------------------------
+// stripImagesFromMessages
+//
+// Removes image blocks from every message that has array content.
+// Used when retrying after a 400/image error.
+// ---------------------------------------------------------------------------
+
+function stripImagesFromMessages(
+  messages: Anthropic.MessageParam[]
+): Anthropic.MessageParam[] {
+  return messages.map((msg) => {
+    if (!Array.isArray(msg.content)) return msg;
+    return { ...msg, content: filterImageBlocks(msg.content as Anthropic.ContentBlockParam[]) };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// isImageError
+//
+// Heuristic: Anthropic returns 400 (BadRequestError) or 403 (PermissionDeniedError)
+// with the word "image" in the message when a URL-source image fetch fails.
+// ---------------------------------------------------------------------------
+
+function isImageError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const name = (error as { name?: string }).name ?? '';
+  const status = (error as { status?: number }).status ?? 0;
+  const msg = error.message.toLowerCase();
+  return (
+    (name === 'BadRequestError' || name === 'PermissionDeniedError' || status === 400 || status === 403) &&
+    msg.includes('image')
+  );
+}
+
+// ---------------------------------------------------------------------------
+// buildContextMessage
+//
+// Converts a single ContextMessage to an Anthropic.MessageParam.
+// Handles string content (with optional author prefix) and array content.
+// Honors the ENABLE_VISION flag: when vision is disabled, filters image blocks.
+// ---------------------------------------------------------------------------
+
+function buildContextMessage(ctx: ContextMessage): Anthropic.MessageParam | null {
+  const role: 'user' | 'assistant' = ctx.role === 'user' ? 'user' : 'assistant';
+
+  if (typeof ctx.content === 'string') {
+    if (!ctx.content || ctx.content.trim() === '') return null;
+    const prefix = ctx.author ? `[${ctx.author}]: ` : '';
+    return { role, content: `${prefix}${ctx.content}` };
+  }
+
+  // Array content path
+  let blocks = ctx.content as Anthropic.ContentBlockParam[];
+
+  // Honor ENABLE_VISION=false
+  if (isVisionDisabled()) {
+    blocks = filterImageBlocks(blocks.filter((b) => b.type !== 'image'));
+    if (blocks.length === 0) {
+      blocks = [{ type: 'text', text: '(image removed)' }];
+    }
+  }
+
+  if (blocks.length === 0) return null;
+
+  // Prepend author prefix as a text block if author is defined and there are blocks
+  if (ctx.author) {
+    const prefix = `[${ctx.author}]: `;
+    const firstBlock = blocks[0];
+    if (firstBlock && firstBlock.type === 'text') {
+      // Prepend prefix to first text block
+      blocks = [
+        { type: 'text', text: `${prefix}${(firstBlock as Anthropic.TextBlockParam).text}` },
+        ...blocks.slice(1),
+      ];
+    } else {
+      // Prepend as a new text block
+      blocks = [{ type: 'text', text: prefix }, ...blocks];
+    }
+  }
+
+  return { role, content: blocks };
+}
+
+// ---------------------------------------------------------------------------
+// buildMessages
+//
+// Converts request.context into the Anthropic MessageParam[] that will be sent
+// as the initial context slice. Applies:
+//   - Author-prefix injection
+//   - Vision-flag filtering
+//   - Consecutive-same-role collapse
+// ---------------------------------------------------------------------------
+
+export function buildMessages(context: ContextMessage[]): Anthropic.MessageParam[] {
+  const raw: Anthropic.MessageParam[] = [];
+
+  for (const ctx of context) {
+    const msg = buildContextMessage(ctx);
+    if (msg) raw.push(msg);
+  }
+
+  return collapseConsecutiveRoles(raw);
+}
 
 /**
  * Get tools based on user tier
@@ -317,7 +499,9 @@ async function executeTool(
   toolInput: Record<string, unknown>,
   config: BotConfig
 ): Promise<{ result: string; success: boolean }> {
-  console.log(`[Tool] Executing: ${toolName}`, JSON.stringify(toolInput));
+  // Scrub CDN URLs from the serialized input before logging (defense-in-depth for
+  // future tools that may carry attachment URLs in their inputs).
+  console.log(`[Tool] Executing: ${toolName}`, scrubDiscordCdnUrls(JSON.stringify(toolInput)));
   try {
   const toolResult = await executeToolInner(toolName, toolInput, config);
   console.log(`[Tool] ${toolName} result: success=${toolResult.success}`, toolResult.success ? '' : toolResult.result);
@@ -750,16 +934,22 @@ async function executeToolInner(
 }
 
 /**
- * Process a request with Claude
+ * Process a request with Claude.
+ *
+ * @param request  - The agent request.
+ * @param config   - Bot configuration (API keys etc.).
+ * @param _client  - Optional injectable Anthropic client (used in tests to
+ *                   avoid hitting the real API). Production callers omit this.
  */
 export async function processAgentRequest(
   request: AgentRequest,
-  config: BotConfig
+  config: BotConfig,
+  _client?: AnthropicClientLike
 ): Promise<AgentResponse> {
   const startTime = Date.now();
   let totalTokens = 0;
 
-  const anthropic = new Anthropic({
+  const anthropic: AnthropicClientLike = _client ?? new Anthropic({
     apiKey: config.anthropicApiKey,
   });
 
@@ -767,36 +957,13 @@ export async function processAgentRequest(
     .replace('{username}', request.username)
     .replace('{channel}', request.channel);
 
-  // Build messages
-  const messages: Anthropic.MessageParam[] = [];
+  // Build context messages (last 15), handling string and array content,
+  // applying vision-flag filtering, author-prefix injection, and
+  // consecutive-same-role collapse — all inside buildMessages().
+  const messages: Anthropic.MessageParam[] = buildMessages(request.context.slice(-15));
 
-  // Add context (last 10 messages), filtering out empty content
-  // (Anthropic API requires all messages to have non-empty content)
-  // Include author names so Claude can distinguish between different users/bots
-  // TODO(W3): when W3 lands, replace this loop with buildMessages() that handles
-  // array content (ContentBlockParam[]) from messageToContext. See plan §4.
-  for (const ctx of request.context.slice(-10)) {
-    if (Array.isArray(ctx.content)) {
-      // W3 will handle array content properly; for now pass through as-is
-      if (ctx.content.length === 0) continue;
-      messages.push({
-        role: ctx.role === 'user' ? 'user' : 'assistant',
-        content: ctx.content,
-      });
-    } else {
-      if (!ctx.content || ctx.content.trim() === '') {
-        continue;
-      }
-      const prefix = ctx.author ? `[${ctx.author}]: ` : '';
-      messages.push({
-        role: ctx.role === 'user' ? 'user' : 'assistant',
-        content: `${prefix}${ctx.content}`,
-      });
-    }
-  }
-
-  // Validate request content is not empty
-  if (!request.content || request.content.trim() === '') {
+  // Validate request: either content must be non-empty OR attachments present
+  if (!request.content?.trim() && !(request.attachments?.length)) {
     return {
       content: 'Please provide a message.',
       tokensUsed: 0,
@@ -804,27 +971,77 @@ export async function processAgentRequest(
     };
   }
 
-  // Add current message
-  messages.push({
-    role: 'user',
-    content: request.content,
-  });
+  // Build the current user turn
+  if (request.attachments && request.attachments.length > 0) {
+    // Vision turn: text block + image block(s)
+    const blocks: Anthropic.ContentBlockParam[] = [
+      { type: 'text', text: request.content || '' },
+      ...request.attachments.map(
+        (a): Anthropic.ImageBlockParam => ({
+          type: 'image',
+          source: { type: 'url', url: a.url },
+        })
+      ),
+    ];
+    messages.push({ role: 'user', content: blocks });
+  } else {
+    messages.push({ role: 'user', content: request.content });
+  }
 
   const tools = getTools(request.tier);
   console.log(`[Agent] User tier: ${request.tier}, Tools available: ${tools.map(t => t.name).join(', ') || 'none'}`);
 
+  // Helper: call messages.create, retrying once without images on 400/403 image errors.
+  async function callWithImageRetry(
+    msgs: Anthropic.MessageParam[]
+  ): Promise<Anthropic.Message> {
+    try {
+      const response = await anthropic.messages.create({
+        model: MODEL_ID,
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: msgs,
+        tools: tools.length > 0 ? tools : undefined,
+      } as Anthropic.MessageCreateParamsNonStreaming);
+      return response;
+    } catch (firstError: unknown) {
+      if (!isImageError(firstError)) throw firstError;
+
+      // Strip images and retry once
+      const scrubbed = stripImagesFromMessages(msgs);
+      console.warn(
+        '[Agent] Image error on first call — retrying without images. Error:',
+        scrubDiscordCdnUrls(String((firstError as Error).message)),
+        'Scrubbed messages:',
+        scrubDiscordCdnUrls(JSON.stringify(scrubbed))
+      );
+
+      try {
+        const retryResponse = await anthropic.messages.create({
+          model: MODEL_ID,
+          max_tokens: 2048,
+          system: systemPrompt,
+          messages: scrubbed,
+          tools: tools.length > 0 ? tools : undefined,
+        } as Anthropic.MessageCreateParamsNonStreaming);
+        return retryResponse;
+      } catch (retryError: unknown) {
+        // Both attempts failed — re-throw with scrubbed message to avoid leaking URLs
+        const originalMsg = scrubDiscordCdnUrls(String((firstError as Error).message));
+        throw new Error(originalMsg);
+      }
+    }
+  }
+
   try {
-    let response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages,
-      tools: tools.length > 0 ? tools : undefined,
-    });
+    let response = await callWithImageRetry(messages);
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
 
     // Handle tool use loop (max 5 iterations)
+    // NOTE: messages appended here (assistant tool_use + user tool_result) are
+    // NOT run through collapseConsecutiveRoles — they must remain as separate
+    // adjacent turns to satisfy the Anthropic API's alternation requirement.
     let iterations = 0;
     while (response.stop_reason === 'tool_use' && iterations < 5) {
       iterations++;
@@ -858,13 +1075,7 @@ export async function processAgentRequest(
         content: toolResults,
       });
 
-      response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages,
-        tools: tools.length > 0 ? tools : undefined,
-      });
+      response = await callWithImageRetry(messages);
 
       totalTokens += response.usage.input_tokens + response.usage.output_tokens;
     }
