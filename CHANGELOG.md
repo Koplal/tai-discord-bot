@@ -5,6 +5,10 @@ All notable changes to the TAI Discord Bot.
 ## [Unreleased]
 
 ### Added
+- Image/vision support for `@TAIBot` mentions and `/tai ask` slash command: up to 2 image attachments forwarded as Anthropic `type:"image"` URL-source content blocks (COD-992)
+- `ENABLE_VISION` environment flag (`true` by default) for instant rollback of vision feature without a redeploy (COD-992)
+- Vitest test runner with 71 unit tests across `src/__tests__/`, `src/__fixtures__/`, and `src/__integration__/` (COD-992)
+- `scrubDiscordCdnUrls` log-hygiene helper (`src/lib/log-scrub.ts`) — strips CDN tokens from log output to prevent credential leaks (COD-992)
 - Integration tests T29 (vision) and T30 (15-message context) in `src/__integration__/` (COD-992)
 - `test-fixtures/vision-test.png` — 8×8 solid-red PNG used by T29 vision integration test
 - `.github/workflows/test.yml` — CI job running unit tests + build on every PR and push
@@ -24,6 +28,10 @@ All notable changes to the TAI Discord Bot.
 - Milestone field type documentation
 
 ### Changed
+- Message history context window bumped from 10 to 15 messages (COD-992)
+- `max_tokens` increased from 1024 to 2048 to support richer vision responses (COD-992)
+- Extracted `MODEL_ID` constant at top of `src/services/agent.ts` — no longer inlined at call sites (COD-992)
+- Reconciled `AgentRequest` / `AgentResponse` type duplication: `AgentRequest` now lives solely in `agent.ts`, dead re-export removed from `types.ts` (COD-992)
 - Estimates now use T-shirt sizes: XS=1, S=2, M=3, L=5, XL=8
 - Updated system prompt with cycle tool and estimate syntax
 - Clarified distinction between cycles (sprints) and labels (tags)
