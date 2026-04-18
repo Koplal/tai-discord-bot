@@ -10,7 +10,7 @@ import { messageToContext, type ContextMessage } from '../types.js';
  */
 export async function collectContext(
   channel: TextBasedChannel,
-  limit: number = 10
+  limit: number = 15
 ): Promise<ContextMessage[]> {
   try {
     // Fetch recent messages
@@ -33,7 +33,7 @@ export async function collectContext(
  */
 export async function collectThreadContext(
   channel: TextBasedChannel,
-  limit: number = 10
+  limit: number = 15
 ): Promise<ContextMessage[]> {
   const messages = await collectContext(channel, limit);
 
@@ -84,7 +84,7 @@ async function hydrateIfPartial(msg: Message): Promise<Message> {
  */
 export async function collectReplyContext(
   message: Message,
-  limit: number = 10
+  limit: number = 15
 ): Promise<ContextMessage[]> {
   const replyChain: ContextMessage[] = [];
 
