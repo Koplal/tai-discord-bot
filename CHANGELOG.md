@@ -5,6 +5,10 @@ All notable changes to the TAI Discord Bot.
 ## [Unreleased]
 
 ### Added
+- Integration tests T29 (vision) and T30 (15-message context) in `src/__integration__/` (COD-992)
+- `test-fixtures/vision-test.png` — 8×8 solid-red PNG used by T29 vision integration test
+- `.github/workflows/test.yml` — CI job running unit tests + build on every PR and push
+- Integration test run instructions in `deploy/README.md`
 - `list_issue_comments` tool to read Linear issue comment threads (COD-503)
 - Recent comments shown in `get_linear_issue` detailed responses
 - Discord thread and reply chain context awareness
