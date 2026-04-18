@@ -152,7 +152,7 @@ const IMAGE_SIZE_CAP = 10 * 1024 * 1024;
  * by extracting the base MIME type before the first semicolon.
  */
 function isAllowedImageMime(contentType: string): boolean {
-  const base = contentType.split(';')[0]?.trim() ?? '';
+  const base = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
   return ALLOWED_IMAGE_MIME_PREFIXES.some((prefix) => base === prefix);
 }
 
@@ -184,6 +184,8 @@ export function messageToContext(message: Message): ContextMessage {
   // Collect image blocks from attachments (filter: MIME, spoiler, size, non-null)
   const imageBlocks: Anthropic.ImageBlockParam[] = [];
   for (const attachment of message.attachments.values()) {
+    // Enforce 2-image cap (matches filterImageAttachments cap)
+    if (imageBlocks.length >= 2) break;
     // Reject null contentType
     if (attachment.contentType === null || attachment.contentType === undefined) continue;
     // Reject non-image MIME types (base MIME prefix match)

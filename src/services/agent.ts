@@ -228,10 +228,7 @@ function buildContextMessage(ctx: ContextMessage): Anthropic.MessageParam | null
 
   // Honor ENABLE_VISION=false
   if (isVisionDisabled()) {
-    blocks = filterImageBlocks(blocks.filter((b) => b.type !== 'image'));
-    if (blocks.length === 0) {
-      blocks = [{ type: 'text', text: '(image removed)' }];
-    }
+    blocks = filterImageBlocks(blocks);
   }
 
   if (blocks.length === 0) return null;
@@ -1090,7 +1087,7 @@ export async function processAgentRequest(
       processingTimeMs: Date.now() - startTime,
     };
   } catch (error) {
-    console.error('Agent error:', error);
+    console.error('Agent error:', scrubDiscordCdnUrls(String(error instanceof Error ? error.message : error)));
 
     return {
       content: 'Sorry, I encountered an error processing your request. Please try again.',
