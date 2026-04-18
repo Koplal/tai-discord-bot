@@ -1,4 +1,5 @@
 import type { Message, GuildMember } from 'discord.js';
+import type { Anthropic } from '@anthropic-ai/sdk';
 
 /**
  * User tier determines rate limits and feature access
@@ -21,32 +22,17 @@ export interface RolePermission {
  */
 export interface ContextMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | Anthropic.ContentBlockParam[];
   author?: string;
   timestamp?: string;
 }
 
 /**
- * Request payload sent to TAI backend
+ * Image attachment extracted from a Discord message
  */
-export interface AgentRequest {
-  content: string;
-  context: {
-    messages: ContextMessage[];
-  };
-  user: {
-    discordId: string;
-    username: string;
-    roles: string[];
-  };
-  channel: {
-    id: string;
-    name: string | null;
-  };
-  guild?: {
-    id: string;
-    name: string;
-  };
+export interface ImageAttachment {
+  url: string;
+  mimeType: string;
 }
 
 /**

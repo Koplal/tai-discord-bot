@@ -5,7 +5,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { BotConfig, ContextMessage, UserTier } from '../types.js';
+import type { BotConfig, ContextMessage, UserTier, AgentResponse, ImageAttachment } from '../types.js';
 import {
   createLinearIssue,
   searchLinearIssues,
@@ -89,13 +89,10 @@ export interface AgentRequest {
   username: string;
   channel: string;
   tier: UserTier;
+  attachments?: ImageAttachment[];
 }
 
-export interface AgentResponse {
-  content: string;
-  tokensUsed: number;
-  processingTimeMs: number;
-}
+export type { AgentResponse };
 
 /**
  * Get tools based on user tier
@@ -776,15 +773,26 @@ export async function processAgentRequest(
   // Add context (last 10 messages), filtering out empty content
   // (Anthropic API requires all messages to have non-empty content)
   // Include author names so Claude can distinguish between different users/bots
+  // TODO(W3): when W3 lands, replace this loop with buildMessages() that handles
+  // array content (ContentBlockParam[]) from messageToContext. See plan §4.
   for (const ctx of request.context.slice(-10)) {
-    if (!ctx.content || ctx.content.trim() === '') {
-      continue;
+    if (Array.isArray(ctx.content)) {
+      // W3 will handle array content properly; for now pass through as-is
+      if (ctx.content.length === 0) continue;
+      messages.push({
+        role: ctx.role === 'user' ? 'user' : 'assistant',
+        content: ctx.content,
+      });
+    } else {
+      if (!ctx.content || ctx.content.trim() === '') {
+        continue;
+      }
+      const prefix = ctx.author ? `[${ctx.author}]: ` : '';
+      messages.push({
+        role: ctx.role === 'user' ? 'user' : 'assistant',
+        content: `${prefix}${ctx.content}`,
+      });
     }
-    const prefix = ctx.author ? `[${ctx.author}]: ` : '';
-    messages.push({
-      role: ctx.role === 'user' ? 'user' : 'assistant',
-      content: `${prefix}${ctx.content}`,
-    });
   }
 
   // Validate request content is not empty
