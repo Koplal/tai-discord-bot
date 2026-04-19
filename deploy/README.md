@@ -55,6 +55,7 @@ DISCORD_GUILD_ID=...
 ANTHROPIC_API_KEY=...
 LINEAR_API_KEY=...
 LINEAR_TEAM_ID=...
+ENABLE_VISION=true
 ```
 
 ### 5. Start the Bot
@@ -62,6 +63,29 @@ LINEAR_TEAM_ID=...
 ```bash
 sudo systemctl start tai-discord-bot
 ```
+
+## Running Integration Tests
+
+Integration tests (T29, T30) hit real Anthropic APIs and cost real tokens. They are
+skipped by default in CI and local `npm run test` runs.
+
+To run integration tests locally:
+
+```bash
+RUN_INTEGRATION_TESTS=1 ANTHROPIC_API_KEY=<your-key> npm run test:integration
+```
+
+What the integration tests cover:
+
+- **T29 `integration_visionRespondsToSimpleImage`** — sends a real PNG image to Claude via the
+  vision pipeline and verifies the response describes a red image.
+- **T30 `integration_15MessageContextRoundtrip`** — builds 15 synthetic context messages
+  (with a secret passphrase in the first), asks Claude to recall it, and verifies the
+  full 15-message window was passed through.
+
+The test fixture image (`test-fixtures/vision-test.png`) is a tiny 8×8 solid-red PNG
+checked into the repo. It is accessed via `raw.githubusercontent.com` so Anthropic's
+servers can fetch it during the T29 test.
 
 ## GitHub Actions Auto-Deploy
 
@@ -76,6 +100,10 @@ On every push to `main`, the deploy workflow SSHes into the VM and restarts the 
 | `GCP_SSH_KEY` | Private SSH key for the VM |
 
 Set these in **Settings > Secrets and variables > Actions** in the GitHub repo.
+
+### Slash Command Registration
+
+The deploy workflow automatically runs `npm run register` before restarting the service on every production deploy. This re-registers all slash command schemas (including new options like the `/tai ask image` attachment option added in COD-992) so that Discord reflects any command definition changes immediately. The `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, and `DISCORD_GUILD_ID` environment variables are read from the `.env` file in `/opt/tai-discord-bot` by the `discordbot` service account, which is the same file used at runtime. If running a manual redeploy outside of GitHub Actions, include `sudo -u discordbot npm run register` before the `systemctl restart` step.
 
 ## Free Tier Notes
 

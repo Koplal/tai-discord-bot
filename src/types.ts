@@ -1,4 +1,5 @@
 import type { Message, GuildMember } from 'discord.js';
+import type { Anthropic } from '@anthropic-ai/sdk';
 
 /**
  * User tier determines rate limits and feature access
@@ -21,32 +22,17 @@ export interface RolePermission {
  */
 export interface ContextMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | Anthropic.ContentBlockParam[];
   author?: string;
   timestamp?: string;
 }
 
 /**
- * Request payload sent to TAI backend
+ * Image attachment extracted from a Discord message
  */
-export interface AgentRequest {
-  content: string;
-  context: {
-    messages: ContextMessage[];
-  };
-  user: {
-    discordId: string;
-    username: string;
-    roles: string[];
-  };
-  channel: {
-    id: string;
-    name: string | null;
-  };
-  guild?: {
-    id: string;
-    name: string;
-  };
+export interface ImageAttachment {
+  url: string;
+  mimeType: string;
 }
 
 /**
@@ -152,8 +138,30 @@ export function getUserTier(member: GuildMember | null, roleTiers: Map<string, R
 }
 
 /**
+ * Allowed image MIME type prefixes for Discord attachments.
+ * Using prefix match so variants like "image/png; charset=utf-8" are accepted.
+ */
+const ALLOWED_IMAGE_MIME_PREFIXES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+
+/** 10 MB per-image size cap */
+const IMAGE_SIZE_CAP = 10 * 1024 * 1024;
+
+/**
+ * Returns true if the given MIME type is an accepted image type.
+ * Handles content-type headers with parameters (e.g. "image/png; charset=utf-8")
+ * by extracting the base MIME type before the first semicolon.
+ */
+function isAllowedImageMime(contentType: string): boolean {
+  const base = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+  return ALLOWED_IMAGE_MIME_PREFIXES.some((prefix) => base === prefix);
+}
+
+/**
  * Extract relevant info from a Discord message.
  * Captures both regular content and embed content (many bots use embeds).
+ * If the message has image attachments that pass the filter, returns array
+ * content (ContentBlockParam[]) with text + image blocks. Otherwise returns
+ * a plain string (backwards compatible with text-only messages).
  */
 export function messageToContext(message: Message): ContextMessage {
   const parts: string[] = [];
@@ -173,9 +181,49 @@ export function messageToContext(message: Message): ContextMessage {
     if (embed.footer?.text) parts.push(embed.footer.text);
   }
 
+  // Collect image blocks from attachments (filter: MIME, spoiler, size, non-null)
+  const imageBlocks: Anthropic.ImageBlockParam[] = [];
+  for (const attachment of message.attachments.values()) {
+    // Enforce 2-image cap (matches filterImageAttachments cap)
+    if (imageBlocks.length >= 2) break;
+    // Reject null contentType
+    if (attachment.contentType === null || attachment.contentType === undefined) continue;
+    // Reject non-image MIME types (base MIME prefix match)
+    if (!isAllowedImageMime(attachment.contentType)) continue;
+    // Reject spoiler attachments — honor user intent
+    if (attachment.spoiler) continue;
+    // Reject images over 10MB
+    if (attachment.size > IMAGE_SIZE_CAP) continue;
+
+    imageBlocks.push({
+      type: 'image',
+      source: {
+        type: 'url',
+        url: attachment.url,
+      },
+    });
+  }
+
+  const joinedText = parts.join('\n') || '';
+
+  // If any images survived the filter, return array content
+  if (imageBlocks.length > 0) {
+    const blocks: Anthropic.ContentBlockParam[] = [
+      { type: 'text', text: joinedText },
+      ...imageBlocks,
+    ];
+    return {
+      role: message.author.bot ? 'assistant' : 'user',
+      content: blocks,
+      author: message.author.username,
+      timestamp: message.createdAt.toISOString(),
+    };
+  }
+
+  // No images — return plain string (backwards compatible)
   return {
     role: message.author.bot ? 'assistant' : 'user',
-    content: parts.join('\n') || '',
+    content: joinedText,
     author: message.author.username,
     timestamp: message.createdAt.toISOString(),
   };

@@ -5,6 +5,7 @@ import { processAgentRequest } from '../services/agent.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
 import { checkPermissions } from '../middleware/permissions.js';
+import { filterImageAttachments } from './imageFilter.js';
 
 /**
  * Get channel name safely (returns null for DMs)
@@ -35,8 +36,11 @@ export async function handleMessageCreate(
     .replace(new RegExp(`<@!?${client.user!.id}>`, 'g'), '')
     .trim();
 
-  // Ignore empty mentions
-  if (!prompt) {
+  // Extract image attachments (ENABLE_VISION=false → empty array)
+  const images = filterImageAttachments(message.attachments);
+
+  // Ignore empty mentions (no text and no images)
+  if (!prompt && images.length === 0) {
     await message.reply('👋 Hi! You can ask me anything. Try: `@TAIBot help me create a bug ticket`');
     return;
   }
@@ -70,11 +74,11 @@ export async function handleMessageCreate(
     // Collect context: use thread context for threads, reply context for replies, otherwise channel context
     let context: import('../types.js').ContextMessage[];
     if (message.channel.isThread()) {
-      context = await collectThreadContext(message.channel, 10);
+      context = await collectThreadContext(message.channel);
     } else if (message.reference) {
-      context = await collectReplyContext(message, 10);
+      context = await collectReplyContext(message);
     } else {
-      context = await collectContext(message.channel, 10);
+      context = await collectContext(message.channel);
     }
 
     // Process request with Claude agent directly
@@ -85,6 +89,7 @@ export async function handleMessageCreate(
         username: message.author.username,
         channel: getChannelName(message.channel) ?? 'DM',
         tier: permissionCheck.tier,
+        attachments: images,
       },
       config
     );

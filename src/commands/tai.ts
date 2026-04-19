@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, type Attachment } from 'discord.js';
 
 /**
  * /tai slash command definition
@@ -22,6 +22,12 @@ export const taiCommand = new SlashCommandBuilder()
           .setDescription('What would you like TAI to help with?')
           .setRequired(true)
           .setMaxLength(2000)
+      )
+      .addAttachmentOption((option) =>
+        option
+          .setName('image')
+          .setDescription('Optional image to analyze')
+          .setRequired(false)
       )
   )
   .addSubcommand((subcommand) =>
@@ -87,15 +93,18 @@ export function parseTaiCommand(interaction: TaiCommandInteraction): {
   subcommand: string;
   prompt: string;
   options: Record<string, string | undefined>;
+  image?: Attachment;
 } {
   const subcommand = interaction.options.getSubcommand();
 
   let prompt = '';
   const options: Record<string, string | undefined> = {};
+  let image: Attachment | undefined;
 
   switch (subcommand) {
     case 'ask':
       prompt = interaction.options.getString('prompt', true);
+      image = interaction.options.getAttachment('image') ?? undefined;
       break;
     case 'create-issue':
       prompt = `Create a Linear issue: ${interaction.options.getString('description', true)}`;
@@ -109,5 +118,5 @@ export function parseTaiCommand(interaction: TaiCommandInteraction): {
       break;
   }
 
-  return { subcommand, prompt, options };
+  return { subcommand, prompt, options, image };
 }

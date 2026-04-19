@@ -21,4 +21,5 @@ jobs:
             sudo -u discordbot npm ci
             sudo -u discordbot ./node_modules/.bin/tsc
             sudo -u discordbot npm prune --omit=dev
+            sudo -u discordbot npm run register
             sudo systemctl restart tai-discord-bot

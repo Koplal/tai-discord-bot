@@ -1,4 +1,4 @@
-import { ChannelType, type Interaction, type TextBasedChannel } from 'discord.js';
+import { ChannelType, Collection, type Attachment, type Interaction, type TextBasedChannel } from 'discord.js';
 import type { BotConfig } from '../types.js';
 import { parseTaiCommand, type TaiCommandInteraction } from '../commands/tai.js';
 import { collectContext, collectThreadContext } from '../services/context-collector.js';
@@ -6,6 +6,7 @@ import { processAgentRequest } from '../services/agent.js';
 import { formatResponse } from '../services/response-formatter.js';
 import { checkRateLimit } from '../middleware/rate-limiter.js';
 import { checkPermissions } from '../middleware/permissions.js';
+import { filterImageAttachments } from './imageFilter.js';
 
 /**
  * Get channel name safely (returns null for DMs)
@@ -32,7 +33,7 @@ export async function handleInteractionCreate(
   if (interaction.commandName !== 'tai') return;
 
   const taiInteraction = interaction as TaiCommandInteraction;
-  const { subcommand, prompt, options } = parseTaiCommand(taiInteraction);
+  const { subcommand, prompt, options, image } = parseTaiCommand(taiInteraction);
 
   // Determine required feature based on subcommand
   const featureMap: Record<string, string> = {
@@ -73,9 +74,9 @@ export async function handleInteractionCreate(
     // Collect context: use thread context for threads, otherwise channel context
     let context: import('../types.js').ContextMessage[];
     if (interaction.channel?.isThread()) {
-      context = await collectThreadContext(interaction.channel, 10);
+      context = await collectThreadContext(interaction.channel);
     } else if (interaction.channel) {
-      context = await collectContext(interaction.channel, 10);
+      context = await collectContext(interaction.channel);
     } else {
       context = [];
     }
@@ -86,6 +87,12 @@ export async function handleInteractionCreate(
       enhancedPrompt += ` [Priority: ${options.priority}]`;
     }
 
+    // Extract and filter image attachment if provided on the /tai ask command
+    const attachments =
+      image != null
+        ? filterImageAttachments(new Collection<string, Attachment>([[image.id, image]]))
+        : undefined;
+
     // Process request with Claude agent directly
     const response = await processAgentRequest(
       {
@@ -94,6 +101,7 @@ export async function handleInteractionCreate(
         username: interaction.user.username,
         channel: getChannelName(interaction.channel) ?? 'DM',
         tier: permissionCheck.tier,
+        ...(attachments && attachments.length > 0 ? { attachments } : {}),
       },
       config
     );
