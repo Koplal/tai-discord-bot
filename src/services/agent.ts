@@ -37,7 +37,7 @@ const SYSTEM_PROMPT = `You are TAI Bot, an AI assistant for the Transformational
 You have the following tools available:
 - create_linear_issue: Create new Linear issues
 - search_linear_issues: Search for issues by keywords
-- get_linear_issue: Get details of a specific issue by identifier (e.g., COD-379), includes recent comments
+- get_linear_issue: Get details of a specific issue by identifier (e.g., TAI-379), includes recent comments
 - list_linear_issues: List recent issues, optionally filtered by status
 - update_linear_issue: Update an issue's status, priority, assignee, labels, project, title, or description
 - add_linear_comment: Add a comment to an issue
@@ -50,9 +50,9 @@ You have the following tools available:
 IMPORTANT: You CAN update issues. Use the update_linear_issue tool to change:
 - status: backlog, todo, in_progress, done, canceled
 - priority: urgent, high, normal, low
-- assignee: Use team member names like "Justin", "Rod"
+- assignee: Use team member names like "Justin", "Rod", "Landon"
 - labels: Array of label names like ["Bug", "Feature"] - these are ADDED to existing labels
-- project: Project name like "TAI v1"
+- project: Project name like "Memory System"
 - title/description: Update text content
 - estimate: T-shirt size (XS=1, S=2, M=3, L=5, XL=8)
 
@@ -78,7 +78,7 @@ Guidelines:
 - Be concise - Discord has a 2000 character limit
 - Use markdown formatting (bold, code blocks, lists)
 - When creating issues, extract a clear title and detailed description
-- For issue lookups, use the identifier format (e.g., COD-379)
+- For issue lookups, use the identifier format (e.g., TAI-379)
 - When updating issues, confirm what was changed
 - Always try to use your tools when the user asks for Linear operations
 - If a user asks about a conversation or discussion, you already have channel/thread context — reference it directly
@@ -331,13 +331,13 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
     },
     {
       name: 'get_linear_issue',
-      description: 'Get detailed information about a specific Linear issue by its identifier (e.g., COD-379).',
+      description: 'Get detailed information about a specific Linear issue by its identifier (e.g., TAI-379).',
       input_schema: {
         type: 'object' as const,
         properties: {
           identifier: {
             type: 'string',
-            description: 'Issue identifier like COD-379',
+            description: 'Issue identifier like TAI-379',
           },
         },
         required: ['identifier'],
@@ -370,7 +370,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
         properties: {
           identifier: {
             type: 'string',
-            description: 'Issue identifier like COD-379',
+            description: 'Issue identifier like TAI-379',
           },
           status: {
             type: 'string',
@@ -384,7 +384,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
           },
           assignee: {
             type: 'string',
-            description: 'Name of the user to assign (e.g., "Justin", "Rod")',
+            description: 'Name of the user to assign (e.g., "Justin", "Rod", "Landon")',
           },
           labels: {
             type: 'array',
@@ -393,7 +393,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
           },
           project: {
             type: 'string',
-            description: 'Project name to add the issue to (e.g., "TAI v1")',
+            description: 'Project name to add the issue to (e.g., "Memory System")',
           },
           title: {
             type: 'string',
@@ -415,7 +415,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
         properties: {
           identifier: {
             type: 'string',
-            description: 'Issue identifier like COD-379',
+            description: 'Issue identifier like TAI-379',
           },
           comment: {
             type: 'string',
@@ -433,7 +433,7 @@ function getTools(tier: UserTier): Anthropic.Tool[] {
         properties: {
           identifier: {
             type: 'string',
-            description: 'Issue identifier like COD-379',
+            description: 'Issue identifier like TAI-379',
           },
           limit: {
             type: 'number',

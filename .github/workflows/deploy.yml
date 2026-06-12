@@ -11,10 +11,13 @@ jobs:
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
         with:
           host: ${{ secrets.GCP_HOST }}
           username: ${{ secrets.GCP_USER }}
           key: ${{ secrets.GCP_SSH_KEY }}
+          envs: LINEAR_TEAM_ID
           script: |
             cd /opt/tai-discord-bot
             sudo -u discordbot git pull
@@ -22,4 +25,11 @@ jobs:
             sudo -u discordbot ./node_modules/.bin/tsc
             sudo -u discordbot npm prune --omit=dev
             sudo -u discordbot npm run register
+            # Sync LINEAR_TEAM_ID from the GitHub secret into .env (only when set).
+            # Idempotent: rewrites the existing line so the deployed value is the
+            # single source of truth. No-op if the secret is empty.
+            if [ -n "${LINEAR_TEAM_ID}" ]; then
+              sudo sed -i "s#^LINEAR_TEAM_ID=.*#LINEAR_TEAM_ID=${LINEAR_TEAM_ID}#" /opt/tai-discord-bot/.env
+              echo "Synced LINEAR_TEAM_ID from CI secret."
+            fi
             sudo systemctl restart tai-discord-bot

@@ -289,7 +289,7 @@ export async function searchLinearIssues(
 }
 
 /**
- * Get a Linear issue by identifier (e.g., "COD-379")
+ * Get a Linear issue by identifier (e.g., "TAI-379")
  */
 export async function getLinearIssue(
   apiKey: string,
@@ -297,7 +297,7 @@ export async function getLinearIssue(
   identifier: string
 ): Promise<{ success: boolean; issue?: LinearIssue; error?: string }> {
   try {
-    // Use issues query with filter to find by identifier (e.g., "COD-379")
+    // Use issues query with filter to find by identifier (e.g., "TAI-379")
     // The issue(id:) query expects a UUID, not an identifier
     const query = `
       query GetIssueByIdentifier($filter: IssueFilter!) {
@@ -326,7 +326,7 @@ export async function getLinearIssue(
       }
     `;
 
-    // Parse identifier to extract team key and number (e.g., "COD-379" -> number: 379)
+    // Parse identifier to extract team key and number (e.g., "TAI-379" -> number: 379)
     const match = identifier.match(/^([A-Z]+)-(\d+)$/i);
     if (!match || !match[2]) {
       return { success: false, error: `Invalid identifier format: ${identifier}` };
