@@ -30,7 +30,79 @@ import {
   formatCommentsForDiscord,
 } from './linear-client.js';
 
-const MODEL_ID = 'claude-sonnet-4-20250514';
+// ---------------------------------------------------------------------------
+// Model selection
+//
+// We never pin a dated snapshot like 'claude-sonnet-4-20250514'. Anthropic
+// retires dated snapshots on a fixed date (~12 months), after which every
+// request 404s (not_found_error) and the bot fails with the generic catch-all.
+//
+// Strategy (most-specific wins):
+//   1. ANTHROPIC_MODEL env var — explicit operator pin.
+//   2. Live discovery via the Models API — newest model in MODEL_FAMILY.
+//   3. DEFAULT_MODEL alias — aliases track the latest compatible snapshot and
+//      never expire, so this is a safe fallback.
+// On a 404 at request time we walk STATIC_FALLBACKS and force re-discovery,
+// so a future retirement self-heals instead of taking the bot down.
+// ---------------------------------------------------------------------------
+
+const MODEL_FAMILY = 'claude-sonnet'; // tier to stay on
+const DEFAULT_MODEL = 'claude-sonnet-4-6'; // fallback if discovery is unavailable
+const MODEL_OVERRIDE = process.env['ANTHROPIC_MODEL']?.trim(); // explicit pin wins
+const STATIC_FALLBACKS = ['claude-sonnet-4-6', 'claude-opus-4-8']; // 404 self-heal chain
+
+let cachedModel: string | null = null;
+const isDatedSnapshot = (id: string): boolean => /-\d{8}$/.test(id);
+
+/**
+ * Resolves which model to use, preferring an explicit override, then live
+ * discovery of the newest model in MODEL_FAMILY, then DEFAULT_MODEL.
+ * Result is cached for the process lifetime (reset on a 404 self-heal).
+ */
+async function resolveModel(client: AnthropicClientLike): Promise<string> {
+  if (MODEL_OVERRIDE) return MODEL_OVERRIDE;
+  if (cachedModel) return cachedModel;
+
+  let chosen = DEFAULT_MODEL;
+  try {
+    if (client.models?.list) {
+      const family: { id: string; created_at?: string }[] = [];
+      for await (const m of client.models.list()) {
+        if (m.id.startsWith(MODEL_FAMILY)) family.push(m);
+      }
+      family.sort(
+        (a, b) =>
+          (b.created_at ?? '').localeCompare(a.created_at ?? '') ||
+          (isDatedSnapshot(a.id) ? 1 : 0) - (isDatedSnapshot(b.id) ? 1 : 0) ||
+          b.id.localeCompare(a.id)
+      );
+      if (family[0]) chosen = family[0].id; // newest available Sonnet
+    }
+  } catch (e) {
+    console.warn(
+      `[Agent] model discovery failed, using ${DEFAULT_MODEL}:`,
+      e instanceof Error ? e.message : e
+    );
+  }
+
+  cachedModel = chosen;
+  console.log(`[Agent] Resolved model: ${chosen}`);
+  return chosen;
+}
+
+/**
+ * True when an error is Anthropic's "model not found" 404 — i.e. the model ID
+ * we requested has been retired. Used to trigger the fallback chain.
+ */
+function isModelNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { status?: number }).status ?? 0;
+  const name = (error as { name?: string }).name ?? '';
+  return (
+    (name === 'NotFoundError' || status === 404) &&
+    error.message.toLowerCase().includes('model')
+  );
+}
 
 const SYSTEM_PROMPT = `You are TAI Bot, an AI assistant for the Transformational AI team on Discord.
 
@@ -105,6 +177,11 @@ export type { AgentResponse };
 interface AnthropicClientLike {
   messages: {
     create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+  };
+  // Optional so mock clients without it transparently skip discovery and fall
+  // back to DEFAULT_MODEL — no test changes needed.
+  models?: {
+    list(): AsyncIterable<{ id: string; created_at?: string }>;
   };
 }
 
@@ -988,13 +1065,15 @@ export async function processAgentRequest(
   const tools = getTools(request.tier);
   console.log(`[Agent] User tier: ${request.tier}, Tools available: ${tools.map(t => t.name).join(', ') || 'none'}`);
 
-  // Helper: call messages.create, retrying once without images on 400/403 image errors.
+  // Helper: call messages.create for a given model, retrying once without images
+  // on 400/403 image errors.
   async function callWithImageRetry(
-    msgs: Anthropic.MessageParam[]
+    msgs: Anthropic.MessageParam[],
+    model: string
   ): Promise<Anthropic.Message> {
     try {
       const response = await anthropic.messages.create({
-        model: MODEL_ID,
+        model,
         max_tokens: 2048,
         system: systemPrompt,
         messages: msgs,
@@ -1015,7 +1094,7 @@ export async function processAgentRequest(
 
       try {
         const retryResponse = await anthropic.messages.create({
-          model: MODEL_ID,
+          model,
           max_tokens: 2048,
           system: systemPrompt,
           messages: scrubbed,
@@ -1023,15 +1102,45 @@ export async function processAgentRequest(
         } as Anthropic.MessageCreateParamsNonStreaming);
         return retryResponse;
       } catch (retryError: unknown) {
-        // Both attempts failed — re-throw with scrubbed message to avoid leaking URLs
+        // A retired model surfaces as a 404 on the image-stripped retry too —
+        // let it propagate so callClaude can fall back to the next model.
+        if (isModelNotFoundError(retryError)) throw retryError;
+        // Both attempts failed for an image reason — re-throw with scrubbed
+        // message to avoid leaking URLs.
         const originalMsg = scrubDiscordCdnUrls(String((firstError as Error).message));
         throw new Error(originalMsg);
       }
     }
   }
 
+  // Resolve the model once per request, then build the fallback chain.
+  const primaryModel = await resolveModel(anthropic);
+  const modelCandidates = [...new Set([primaryModel, ...STATIC_FALLBACKS])];
+
+  // Helper: call through the model fallback chain. On a 404 (retired model),
+  // clear the cache (force re-discovery next request) and try the next model.
+  async function callClaude(msgs: Anthropic.MessageParam[]): Promise<Anthropic.Message> {
+    for (let i = 0; i < modelCandidates.length; i++) {
+      const model = modelCandidates[i];
+      if (!model) continue;
+      try {
+        return await callWithImageRetry(msgs, model);
+      } catch (error: unknown) {
+        if (isModelNotFoundError(error) && i < modelCandidates.length - 1) {
+          console.error(
+            `[Agent] "${model}" unavailable; falling back to "${modelCandidates[i + 1]}".`
+          );
+          cachedModel = null; // force re-discovery next request
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error(`No available model among: ${modelCandidates.join(', ')}`);
+  }
+
   try {
-    let response = await callWithImageRetry(messages);
+    let response = await callClaude(messages);
 
     totalTokens += response.usage.input_tokens + response.usage.output_tokens;
 
@@ -1072,7 +1181,7 @@ export async function processAgentRequest(
         content: toolResults,
       });
 
-      response = await callWithImageRetry(messages);
+      response = await callClaude(messages);
 
       totalTokens += response.usage.input_tokens + response.usage.output_tokens;
     }

@@ -12,7 +12,7 @@ Linear Ticket: COD-379
 | Framework | discord.js v14 |
 | Language | TypeScript |
 | Hosting | Google Cloud Free Tier (e2-micro VM) |
-| AI | Anthropic Claude (claude-sonnet-4-20250514) |
+| AI | Anthropic Claude (auto-discovered newest Sonnet; alias fallback `claude-sonnet-4-6`) |
 | Project Management | Linear GraphQL API |
 
 ## Architecture
@@ -135,6 +135,7 @@ npm start
 | DISCORD_CLIENT_ID | Application ID | Yes |
 | DISCORD_GUILD_ID | Server ID for command registration | Yes |
 | ANTHROPIC_API_KEY | Anthropic API key for Claude | Yes |
+| ANTHROPIC_MODEL | Pin a specific Claude model (else auto-discovers newest Sonnet) | No |
 | LINEAR_API_KEY | Linear API key | Yes |
 | LINEAR_TEAM_ID | Linear team UUID | Yes |
 | REDIS_URL | Redis URL for distributed rate limiting | No |

@@ -463,6 +463,40 @@ describe('T21 collapseConsecutiveRoles_scopedToInitialContext_notToolLoop', () =
 });
 
 // ---------------------------------------------------------------------------
+// T23 — model retirement self-heal: 404 not_found falls back to next model
+// ---------------------------------------------------------------------------
+
+describe('T23 agent_fallsBackToNextModelOnRetired404', () => {
+  it('retries with a different model when the first model returns a 404 not_found_error', async () => {
+    // Mirrors the production failure: a retired dated snapshot returns
+    // 404 not_found_error and every request fails with the catch-all.
+    const modelNotFound = Object.assign(
+      new Error('model: claude-sonnet-4-20250514'),
+      { status: 404, name: 'NotFoundError' }
+    );
+
+    const mockClient = makeMockClient();
+    mockClient.messages.create
+      .mockRejectedValueOnce(modelNotFound)
+      .mockResolvedValueOnce(buildMockAnthropicResponse('Recovered.'));
+
+    const result = await processAgentRequest(
+      baseRequest({ content: 'hi' }),
+      makeConfig(),
+      mockClient as never
+    );
+
+    // The bot must recover, not surface the generic error message.
+    expect(result.content).toBe('Recovered.');
+    expect(mockClient.messages.create).toHaveBeenCalledTimes(2);
+
+    const firstModel = (mockClient.messages.create.mock.calls[0]![0] as { model: string }).model;
+    const secondModel = (mockClient.messages.create.mock.calls[1]![0] as { model: string }).model;
+    expect(secondModel).not.toBe(firstModel);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T22 — ENABLE_VISION=false suppresses image blocks at buildMessages level
 // ---------------------------------------------------------------------------
 
